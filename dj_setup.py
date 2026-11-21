@@ -16,7 +16,9 @@ import xml.etree.ElementTree as ET
 
 
 MAPPER_NAME = 'KEYBOARD - Corner HUD DJ'
-MAPPER_REVISION = 2
+MAPPER_REVISION = 3
+DEFAULT_EQ_STEP = 8
+DEFAULT_EQ_COARSE_STEP = 15
 DJ_ACTIONS = {
     'none': 'No action',
     'deck1': 'Select Deck 1', 'deck2': 'Select Deck 2',
@@ -27,9 +29,12 @@ DJ_ACTIONS = {
     'filter_center': 'Center filter', 'filter_toggle': 'Toggle deck filter',
     'volume_down': 'Volume down', 'volume_up': 'Volume up',
     'eq_reset': 'Reset deck EQ', 'sync': 'Sync deck', 'reset_all': 'Reset both decks',
+    'bass_swap': 'Bass swap to selected deck',
 }
 DEFAULT_ENTER_ACTION = 'filter_toggle'
+BASS_SWAP_BINDING = 'CTRL+F11'
 RESET_BOTH_BINDING = 'CTRL+F12'
+DJ_CTRL_FUNCTION_KEYS = {BASS_SWAP_BINDING: 'bass_swap', RESET_BOTH_BINDING: 'reset_all'}
 NUMPAD_ACTIONS = {
     '/': 'deck1', '*': 'deck2', '8': 'high_down', '9': 'high_up',
     '5': 'mid_down', '6': 'mid_up', '2': 'low_down', '3': 'low_up',
@@ -51,12 +56,12 @@ STATE_DIR = 'Corner HUD Mapper Backups'
 
 @dataclass(frozen=True)
 class DjOptions:
-    eq_step: int = 3
+    eq_step: int = DEFAULT_EQ_STEP
     filter_step: int = 5
     volume_step: int = 3
     enter: str = DEFAULT_ENTER_ACTION
     g_keys: tuple[str, ...] = DEFAULT_G_KEYS
-    eq_coarse_step: int = 8
+    eq_coarse_step: int = DEFAULT_EQ_COARSE_STEP
 
     def __post_init__(self):
         if any(type(step) is not int or not 1 <= step <= 25
@@ -68,8 +73,8 @@ class DjOptions:
     @classmethod
     def from_config(cls, cfg):
         return cls(
-            eq_step=cfg.get('dj_eq_step', 3),
-            eq_coarse_step=cfg.get('dj_eq_coarse_step', 8),
+            eq_step=cfg.get('dj_eq_step', DEFAULT_EQ_STEP),
+            eq_coarse_step=cfg.get('dj_eq_coarse_step', DEFAULT_EQ_COARSE_STEP),
             filter_step=cfg.get('dj_filter_step', 5),
             volume_step=cfg.get('dj_volume_step', 3),
             enter=cfg.get('dj_enter', DEFAULT_ENTER_ACTION),
@@ -82,7 +87,7 @@ class DjOptions:
         keys['CTRL+RETURN'] = self.enter
         keys.update({f'F{number}': action for number, action in enumerate(self.g_keys, 13)
                      if action != 'none'})
-        keys[RESET_BOTH_BINDING] = 'reset_all'
+        keys.update(DJ_CTRL_FUNCTION_KEYS)
         keys['F19'] = 'reset_all'
         return keys
 
@@ -114,6 +119,8 @@ def deck_script(deck: int, action: str, options: DjOptions, *, coarse=False) -> 
              'volume': ('level', options.volume_step)}
     if action == 'eq_reset':
         return f'deck {deck} eq_reset'
+    if action == 'bass_swap':
+        return f'deck {3 - deck} eq_low_freq 0% & deck {deck} eq_low_freq 50%'
     if action == 'filter_center':
         return f"deck {deck} filter_selectcolorfx 'filter' & deck {deck} filter 50%"
     if action == 'filter_toggle':

@@ -26,6 +26,9 @@ class DeckEstimates:
             self.sync_deck = self.deck
         elif action == 'eq_reset':
             self.reset_eq(self.deck)
+        elif action == 'bass_swap':
+            self.values[3 - self.deck, 'eq_low'] = 0
+            self.values[self.deck, 'eq_low'] = 50
         elif action == 'filter_toggle':
             if self.deck in self.filter_enabled:
                 self.filter_enabled[self.deck] = not self.filter_enabled[self.deck]

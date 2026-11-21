@@ -7,7 +7,7 @@ from functools import lru_cache
 import os
 from pathlib import Path
 
-from dj_setup import NUMPAD_ACTIONS
+from dj_setup import DJ_CTRL_FUNCTION_KEYS, NUMPAD_ACTIONS
 
 VK_KEYS = {0x60 + n: str(n) for n in range(10)}
 VK_KEYS.update({0x6E: '.', 0x6A: '*', 0x6B: '+', 0x6D: '-', 0x6F: '/'})
@@ -29,7 +29,7 @@ def identify_key(vk, scan, flags):
         return 'keypad', KEYPAD_SCANS[scan]
     if 0x30 <= vk <= 0x39:
         return 'row', chr(vk)
-    if 0x7B <= vk <= 0x82:
+    if 0x7A <= vk <= 0x82:
         return 'function', f'F{vk - 0x6F}'
     return None
 
@@ -41,9 +41,9 @@ def native_dj_action(key, ctrl, options):
             return options.enter if ctrl else None
         return NUMPAD_ACTIONS.get(name)
     if kind == 'function':
-        if name == 'F12':
-            return 'reset_all' if ctrl else None
-        if not ctrl:
+        if ctrl:
+            return DJ_CTRL_FUNCTION_KEYS.get(f'CTRL+{name}')
+        if name in ('F13', 'F14', 'F15', 'F16', 'F17', 'F18', 'F19'):
             return 'reset_all' if name == 'F19' else options.g_keys[int(name[1:]) - 13]
     return None
 

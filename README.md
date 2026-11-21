@@ -12,7 +12,7 @@ Right-click the HUD, or choose **Settings…** from its system tray icon.
 
 - **Mode** switches between Music / Spotify and VirtualDJ.
 - **Music** contains the shortcut assignments, filter, effects, and ELKA connection controls.
-- **VirtualDJ** contains shortcut step sizes, mapper installation and rollback, and DJ-mode options.
+- **VirtualDJ** contains the keybind guide, shortcut step sizes, mapper installation and rollback, and DJ-mode options.
 - **Appearance** contains the view size, monitor, corner, and opacity controls.
 
 ## DJ Mode
@@ -21,6 +21,8 @@ Right-click the HUD, or choose **Settings…** from its system tray icon.
 2. When the mapper first needs installation or an update, the HUD can restart VirtualDJ to apply it. It waits for a clean exit, backs up affected files, installs `KEYBOARD - Corner HUD DJ.xml`, and selects the mapper for the next launch.
 3. Keep VirtualDJ focused and Num Lock on for DJ commands. DJ Mode reserves the entire numpad, even if focus moves to another app. Closing VirtualDJ or choosing **Music / Spotify** restores the Music profile. By default, the HUD closes a running MacroButtons instance when entering DJ Mode and starts it again when leaving. The **Pause MacroButtons in DJ Mode** menu setting controls that behavior for the next entry.
 4. **Enter DJ Mode when VirtualDJ has focus** is optional. It uses an already installed mapper. Selecting Music manually overrides automatic entry until the VirtualDJ session ends.
+
+The keybind guide opens next to the corner HUD when you enter DJ Mode with VirtualDJ focused. Use **×** to dismiss it for the session. To bring it back, choose **VirtualDJ → Show keybinds…** and return focus to VirtualDJ.
 
 The installer detects the current VirtualDJ data directory, including the registered `HomeFolder`. Existing custom keyboard bindings are copied into the dedicated mapper where they do not conflict with the HUD keys. Factory mapping remains available in VirtualDJ. Other configuration bytes and separate mapper files are preserved. Use **VirtualDJ → Restore previous keyboard mapper…** to undo selection and file changes. Backups are stored in `Corner HUD Mapper Backups` in the VirtualDJ data directory.
 
@@ -37,7 +39,7 @@ The installer detects the current VirtualDJ data directory, including the regist
 | `+` | Sync selected deck |
 | Ctrl + `Enter` | Toggle the selected deck’s filter by default, configurable |
 
-Use the keys bare or with Ctrl, except filter bypass, which uses only Ctrl+Numpad Enter. Bare EQ steps are 8% by default. Hold Ctrl for a 3% fine step. **VirtualDJ → Shortcuts and step sizes…** lets you change both EQ steps, filter and volume steps, and the Ctrl+Numpad Enter assignment. The HUD keeps main Enter separate because VirtualDJ reports both Enter keys as the same binding.
+Use the keys bare or with Ctrl, except filter bypass, which uses only Ctrl+Numpad Enter. Bare EQ steps are 15% by default. Hold Ctrl for an 8% step. **VirtualDJ → Shortcuts and step sizes…** lets you change both EQ steps, filter and volume steps, and the Ctrl+Numpad Enter assignment. The HUD keeps main Enter separate because VirtualDJ reports both Enter keys as the same binding.
 
 Bipolar filter steps land on 50% when they reach or cross neutral. The next step moves to the other side. Numpad Minus centers immediately. Ctrl+Numpad Enter toggles the selected deck’s filter while retaining its knob position.
 
@@ -49,7 +51,7 @@ Bipolar filter steps land on 50% when they reach or cross neutral. The next step
 | Loop | Alt+4 | Alt+0 |
 | Sync | Alt+Q | Alt+U |
 
-These are the [standard VirtualDJ transport shortcuts](https://virtualdj.com/manuals/hardware/keyboard/default.html). A conflicting binding in the previous custom mapper takes precedence. Ctrl+F12 resets both decks. F13–F18 are optional virtual keys for profiles that explicitly emit them.
+These are the [standard VirtualDJ transport shortcuts](https://virtualdj.com/manuals/hardware/keyboard/default.html). A conflicting binding in the previous custom mapper takes precedence for transport. **Ctrl+F11** brings the selected deck’s LOW EQ to neutral and cuts LOW on the other deck. **Ctrl+F12** resets both decks. F13–F18 are optional virtual keys for profiles that explicitly emit them.
 
 ### Deck values
 

@@ -33,7 +33,7 @@ class MapperTests(unittest.TestCase):
         self.assertIn("deck 2 filter_activate", actions["CTRL+RETURN"])
         self.assertIn("deck 2 sync", actions["CTRL+NUM+"])
         self.assertIn("deck 1 sync", actions["NUM+"])
-        self.assertIn("deck 2 eq_high_freq -8%", actions["NUM8"])
+        self.assertIn("deck 2 eq_high_freq -15%", actions["NUM8"])
         self.assertIn("deck 2 filter +3%", actions["NUM."])
         self.assertIn("deck 1 eq_reset", actions["CTRL+F12"])
         self.assertNotIn("RETURN", actions)
@@ -53,6 +53,19 @@ class MapperTests(unittest.TestCase):
         self.assertEqual('deck 2 cue_button', actions['ALT+8'])
         self.assertEqual('deck 1 stop_button', actions['ALT+3'])
         self.assertEqual('deck 2 loop_button', actions['ALT+0'])
+
+    def test_default_eq_steps_and_bass_swap_mapping(self):
+        opts = dj_setup.DjOptions.from_config({})
+        self.assertEqual(dj_setup.DjOptions(), opts)
+        self.assertEqual((8, 15), (opts.eq_step, opts.eq_coarse_step))
+        custom = dj_setup.DjOptions.from_config({'dj_eq_step': 4, 'dj_eq_coarse_step': 12})
+        self.assertEqual((4, 12), (custom.eq_step, custom.eq_coarse_step))
+        actions = {n.get('value'): n.get('action') for n in ET.fromstring(dj_setup.build_mapper(opts))}
+        self.assertIn('deck 1 eq_low_freq +8%', actions['CTRL+NUM3'])
+        self.assertIn('deck 2 eq_low_freq +15%', actions['NUM3'])
+        self.assertEqual(dj_setup.ONCE + "var_equal '$cornerhud_deck' 2 ? "
+                         "deck 1 eq_low_freq 0% & deck 2 eq_low_freq 50% : "
+                         "deck 2 eq_low_freq 0% & deck 1 eq_low_freq 50%", actions['CTRL+F11'])
 
     def test_bipolar_step_snaps_to_center_in_both_directions(self):
         self.assertEqual(50, dj_setup.filter_position(48, 3))

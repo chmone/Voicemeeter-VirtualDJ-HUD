@@ -27,7 +27,8 @@ from PIL import Image, ImageDraw
 from screeninfo import get_monitors
 import pystray
 
-from dj_setup import DjOptions
+from dj_keybinds import DjKeybindGuide
+from dj_setup import BASS_SWAP_BINDING, RESET_BOTH_BINDING, DjOptions
 from dj_state import DeckEstimates
 from keyboard_controls import (
     NAVIGATION, ShortcutPresses, foreground_is_virtualdj, identify_key, process_executable,
@@ -597,6 +598,10 @@ class HUD:
         self.stop_event = threading.Event()
         self.hotkey_stop_event = threading.Event()
         self.root = tk.Tk()
+        self.dj_keybinds_requested = False
+        self.dj_keybind_guide = DjKeybindGuide(
+            self.root, self.hide_dj_keybinds, bg=BG, panel=PANEL, fg=FG, muted=MUTED,
+            accent=BLUE, border=BORDER)
         self.context_menu = None
         self.root.title('Voicemeeter Corner HUD')
         self.root.configure(bg=BG)
@@ -1283,6 +1288,9 @@ class HUD:
                 self.dj_auto_blocked_pid = self.dj_pid
                 self.dj_pid = None
             self.cfg['dj_mode'] = enabled
+            self.dj_keybinds_requested = enabled
+            if not enabled:
+                self.dj_keybind_guide.hide()
             save_config(self.cfg)
             w, h = self.size
             self.canvas.configure(width=w, height=h)
@@ -1388,7 +1396,9 @@ class HUD:
         g_values = self.optional_virtual_keys(
             advanced, dict(zip(f_keys, self.dj_options.g_keys)), DJ_ACTIONS)
         action_ids = {label: action for action, label in DJ_ACTIONS.items()}
-        ttk.Label(body, text='Numpad Plus syncs the selected deck.\nCtrl + F12 resets both decks.',
+        ttk.Label(body, text=('Numpad Plus syncs the selected deck.\n'
+                             f'{BASS_SWAP_BINDING.title()} gives bass to the selected deck.\n'
+                             f'{RESET_BOTH_BINDING.title()} resets both decks.'),
                   justify='left').pack(anchor='w', pady=(0, 8))
         transport = ttk.LabelFrame(body, text='Regular keyboard defaults', padding=8)
         transport.pack(fill='x')
@@ -1438,6 +1448,21 @@ class HUD:
               and macrobuttons.wait_for_exit(self.dj_auto_blocked_pid, timeout=0)):
             self.dj_auto_blocked = False
             self.dj_auto_blocked_pid = None
+        self.update_dj_keybinds()
+
+    def update_dj_keybinds(self):
+        if (self.dj_keybinds_requested and self.cfg['dj_mode'] and self.dj_focused
+                and self.root.state() != 'withdrawn'):
+            self.dj_keybind_guide.show(self.dj_options, self.monitors())
+        else:
+            self.dj_keybind_guide.hide()
+
+    def show_dj_keybinds(self):
+        self.dj_keybinds_requested = True
+
+    def hide_dj_keybinds(self):
+        self.dj_keybinds_requested = False
+        self.dj_keybind_guide.hide()
 
     def discover_filter_controls(self, step=None):
         stable_id = self.cfg.get('fx_vst_id')
@@ -1544,6 +1569,8 @@ class HUD:
         menu.add_cascade(label='Music', menu=music)
 
         dj = tk.Menu(menu, tearoff=False)
+        dj.add_command(label='Show keybinds…', command=self.show_dj_keybinds,
+                       state='normal' if dj_active else 'disabled')
         dj.add_command(label='Shortcuts and step sizes…', command=self.configure_dj_controls)
         dj.add_command(label='Install or update keyboard mapper…', command=self.install_dj_mapping)
         dj.add_command(label='Restore previous keyboard mapper…', command=lambda: self.install_dj_mapping(True))
@@ -1686,6 +1713,7 @@ class HUD:
             self.root.deiconify()
             self.root.attributes('-topmost', True)
         else:
+            self.dj_keybind_guide.hide()
             self.root.withdraw()
 
     def round_rect(self, x1, y1, x2, y2, r, **kw):

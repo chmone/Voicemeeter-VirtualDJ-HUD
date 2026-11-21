@@ -131,6 +131,17 @@ class KeyboardTests(unittest.TestCase):
                          self.event(ShortcutPresses(), key, mode='dj', ctrl=False))
         self.assertEqual((False, None), self.event(ShortcutPresses(), key))
 
+    def test_bass_swap_only_uses_ctrl_f11_in_focused_dj_mode(self):
+        key = identify_key(0x7a, 0x57, 0)
+        self.assertEqual(('function', 'F11'), key)
+        presses = ShortcutPresses()
+        self.assertEqual((False, ('dj_key', 'bass_swap', False)), self.event(presses, key, mode='dj'))
+        self.assertEqual((False, None), self.event(presses, key, mode='dj'))
+        self.assertEqual((False, None), self.event(presses, key, mode='dj', down=False, ctrl=False))
+        self.assertEqual((False, None), self.event(presses, key, mode='dj', ctrl=False))
+        self.assertEqual((False, None), self.event(ShortcutPresses(), key))
+        self.assertEqual((True, None), self.event(ShortcutPresses(), key, mode='music_vdj'))
+
     def test_macrobuttons_transition_blocks_dj_commands_until_ready(self):
         presses = ShortcutPresses()
         key = ('keypad', '*')
@@ -157,13 +168,25 @@ class EstimateTests(unittest.TestCase):
 
     def test_bare_eq_is_faster_without_changing_other_decks(self):
         values = DeckEstimates()
-        opts = DjOptions(eq_step=3, eq_coarse_step=8)
+        opts = DjOptions()
         values.apply('reset_all', opts)
         values.apply('high_up', opts, coarse=True)
         values.apply('mid_down', opts)
-        self.assertEqual(58, values.values[1, 'eq_high'])
-        self.assertEqual(47, values.values[1, 'eq_mid'])
+        self.assertEqual(65, values.values[1, 'eq_high'])
+        self.assertEqual(42, values.values[1, 'eq_mid'])
         self.assertEqual(50, values.values[2, 'eq_high'])
+
+    def test_bass_swap_establishes_low_eq_for_both_decks(self):
+        values = DeckEstimates()
+        opts = DjOptions()
+        values.apply('bass_swap', opts)
+        self.assertEqual({}, values.values)
+        values.apply('deck2', opts)
+        values.apply('bass_swap', opts)
+        self.assertEqual({(1, 'eq_low'): 0, (2, 'eq_low'): 50}, values.values)
+        values.apply('deck1', opts)
+        values.apply('bass_swap', opts)
+        self.assertEqual({(1, 'eq_low'): 50, (2, 'eq_low'): 0}, values.values)
 
     def test_bypass_estimate_preserves_filter_position_and_other_deck(self):
         values = DeckEstimates()
