@@ -29,19 +29,22 @@ def identify_key(vk, scan, flags):
         return 'keypad', KEYPAD_SCANS[scan]
     if 0x30 <= vk <= 0x39:
         return 'row', chr(vk)
-    if 0x7C <= vk <= 0x82:
+    if 0x7B <= vk <= 0x82:
         return 'function', f'F{vk - 0x6F}'
     return None
 
 
 def native_dj_action(key, ctrl, options):
     kind, name = key
-    if ctrl and name == 'enter':
-        return options.enter
-    if ctrl and kind == 'keypad':
+    if kind == 'keypad':
+        if name == 'enter':
+            return options.enter if ctrl else None
         return NUMPAD_ACTIONS.get(name)
-    if not ctrl and kind == 'function':
-        return 'reset_all' if name == 'F19' else options.g_keys[int(name[1:]) - 13]
+    if kind == 'function':
+        if name == 'F12':
+            return 'reset_all' if ctrl else None
+        if not ctrl:
+            return 'reset_all' if name == 'F19' else options.g_keys[int(name[1:]) - 13]
     return None
 
 
@@ -50,28 +53,37 @@ class ShortcutPresses:
         self.held = {}
 
     def event(self, key, *, down, ctrl, other_modifier, mode, exclusive,
-              block_enter, number_row, music_actions, music_g_keys, dj_options,
-              home_action=None):
+              number_row, music_actions, music_g_keys, dj_options,
+              home_action=None, dj_keypad_available=True):
         if key is None:
             return False, None
         if not down:
             return self.held.pop(key, False), None
-        if key in self.held:
-            return self.held[key], None
-
         kind, name = key
-        capture = False
+        keypad = kind == 'keypad'
+        if key in self.held:
+            # Keep a held key from repeating into the app that just gained focus.
+            background_repeat = keypad and mode in ('dj_background', 'dj_waiting')
+            return self.held[key] or background_repeat, None
+
+        capture = keypad and mode in ('dj', 'dj_waiting', 'dj_background')
         command = None
         if not other_modifier:
             dj_action = native_dj_action(key, ctrl, dj_options)
             dj_binding = bool(dj_action and dj_action != 'none')
+            # VirtualDJ calls both Enter keys CTRL+RETURN. Filter the main key
+            # before its native mapper can treat it like keypad Enter.
+            main_enter_alias = ctrl and key == ('main', 'enter')
             if mode == 'dj':
-                if dj_binding:
-                    command = ('dj_key', dj_action)
+                if dj_binding and (not keypad or dj_keypad_available):
+                    capture = False
+                    command = ('dj_key', dj_action, keypad and not ctrl)
+                else:
+                    capture = capture or main_enter_alias
             elif mode == 'dj_waiting':
-                capture = dj_binding
+                capture = capture or dj_binding or main_enter_alias
             elif mode in ('music', 'music_vdj'):
-                capture = mode == 'music_vdj' and dj_binding
+                capture = mode == 'music_vdj' and ctrl and (dj_binding or main_enter_alias)
                 if exclusive:
                     if ctrl and (kind == 'keypad' or (kind == 'row' and number_row)):
                         capture = True
@@ -79,8 +91,6 @@ class ShortcutPresses:
                             command = 'key_action:' + music_actions[name]
                     elif ctrl and key == ('main', 'home') and home_action:
                         capture, command = True, 'key_action:' + home_action
-                    elif not ctrl and kind == 'keypad' and name == 'enter' and block_enter:
-                        capture, command = True, 'filter_toggle'
                     elif not ctrl and kind == 'function' and name in music_g_keys:
                         capture, command = True, 'key_action:' + music_g_keys[name]
         self.held[key] = capture

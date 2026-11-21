@@ -16,15 +16,33 @@ import xml.etree.ElementTree as ET
 
 
 MAPPER_NAME = 'KEYBOARD - Corner HUD DJ'
-DJ_ACTIONS = ('deck1', 'deck2', 'high_down', 'high_up', 'mid_down', 'mid_up',
-              'low_down', 'low_up', 'filter_down', 'filter_up', 'volume_down',
-              'volume_up', 'eq_reset', 'filter_center', 'sync', 'reset_all', 'none')
+MAPPER_REVISION = 2
+DJ_ACTIONS = {
+    'none': 'No action',
+    'deck1': 'Select Deck 1', 'deck2': 'Select Deck 2',
+    'high_down': 'High EQ down', 'high_up': 'High EQ up',
+    'mid_down': 'Mid EQ down', 'mid_up': 'Mid EQ up',
+    'low_down': 'Low EQ down', 'low_up': 'Low EQ up',
+    'filter_down': 'Filter left', 'filter_up': 'Filter right',
+    'filter_center': 'Center filter', 'filter_toggle': 'Toggle deck filter',
+    'volume_down': 'Volume down', 'volume_up': 'Volume up',
+    'eq_reset': 'Reset deck EQ', 'sync': 'Sync deck', 'reset_all': 'Reset both decks',
+}
+DEFAULT_ENTER_ACTION = 'filter_toggle'
+RESET_BOTH_BINDING = 'CTRL+F12'
 NUMPAD_ACTIONS = {
     '/': 'deck1', '*': 'deck2', '8': 'high_down', '9': 'high_up',
     '5': 'mid_down', '6': 'mid_up', '2': 'low_down', '3': 'low_up',
     '0': 'filter_down', '.': 'filter_up', '1': 'volume_down', '4': 'volume_up',
     '7': 'eq_reset', '-': 'filter_center', '+': 'sync',
 }
+TRANSPORT_KEYS = (
+    ('Play / pause', 'play_button', '1', '7'),
+    ('Cue', 'cue_button', '2', '8'),
+    ('Stop', 'stop_button', '3', '9'),
+    ('Loop', 'loop_button', '4', '0'),
+    ('Sync', 'sync', 'Q', 'U'),
+)
 DEFAULT_G_KEYS = ('deck1', 'deck2', 'sync', 'eq_reset', 'filter_center', 'none')
 VARIABLE = "'$cornerhud_deck'"
 ONCE = 'up ? nothing : isrepeat ? nothing : '
@@ -36,27 +54,35 @@ class DjOptions:
     eq_step: int = 3
     filter_step: int = 5
     volume_step: int = 3
-    enter: str = 'sync'
+    enter: str = DEFAULT_ENTER_ACTION
     g_keys: tuple[str, ...] = DEFAULT_G_KEYS
+    eq_coarse_step: int = 8
 
     def __post_init__(self):
         if any(type(step) is not int or not 1 <= step <= 25
-               for step in (self.eq_step, self.filter_step, self.volume_step)):
+               for step in (self.eq_step, self.eq_coarse_step, self.filter_step, self.volume_step)):
             raise ValueError('DJ increments must be whole percentages from 1 to 25.')
         if len(self.g_keys) != 6 or any(action not in DJ_ACTIONS for action in (*self.g_keys, self.enter)):
             raise ValueError('Choose a supported action for each DJ key.')
 
     @classmethod
     def from_config(cls, cfg):
-        return cls(cfg.get('dj_eq_step', 3), cfg.get('dj_filter_step', 5),
-                   cfg.get('dj_volume_step', 3), cfg.get('dj_enter', 'sync'),
-                   tuple(cfg.get('dj_g_keys', DEFAULT_G_KEYS)))
+        return cls(
+            eq_step=cfg.get('dj_eq_step', 3),
+            eq_coarse_step=cfg.get('dj_eq_coarse_step', 8),
+            filter_step=cfg.get('dj_filter_step', 5),
+            volume_step=cfg.get('dj_volume_step', 3),
+            enter=cfg.get('dj_enter', DEFAULT_ENTER_ACTION),
+            g_keys=tuple(cfg.get('dj_g_keys', DEFAULT_G_KEYS)),
+        )
 
     def bindings(self):
-        keys = {f'CTRL+NUM{key}': value for key, value in NUMPAD_ACTIONS.items()}
+        keys = {f'{modifier}NUM{key}': value for key, value in NUMPAD_ACTIONS.items()
+                for modifier in ('', 'CTRL+')}
         keys['CTRL+RETURN'] = self.enter
         keys.update({f'F{number}': action for number, action in enumerate(self.g_keys, 13)
                      if action != 'none'})
+        keys[RESET_BOTH_BINDING] = 'reset_all'
         keys['F19'] = 'reset_all'
         return keys
 
@@ -80,15 +106,18 @@ def filter_script(deck: int, step: int) -> str:
             f'param_{crossing} {query} {threshold:g}% ? {center} : {adjust} : {adjust}')
 
 
-def deck_script(deck: int, action: str, options: DjOptions) -> str:
-    steps = {'high': ('eq_high_freq', options.eq_step),
-             'mid': ('eq_mid_freq', options.eq_step),
-             'low': ('eq_low_freq', options.eq_step),
+def deck_script(deck: int, action: str, options: DjOptions, *, coarse=False) -> str:
+    eq_step = options.eq_coarse_step if coarse else options.eq_step
+    steps = {'high': ('eq_high_freq', eq_step),
+             'mid': ('eq_mid_freq', eq_step),
+             'low': ('eq_low_freq', eq_step),
              'volume': ('level', options.volume_step)}
     if action == 'eq_reset':
         return f'deck {deck} eq_reset'
     if action == 'filter_center':
         return f"deck {deck} filter_selectcolorfx 'filter' & deck {deck} filter 50%"
+    if action == 'filter_toggle':
+        return f'deck {deck} filter_activate'
     if action == 'sync':
         return f'deck {deck} sync'
     control, direction = action.split('_')
@@ -99,17 +128,17 @@ def deck_script(deck: int, action: str, options: DjOptions) -> str:
     return f'deck {deck} {verb} {sign * step:+d}%'
 
 
-def action_script(action: str, options: DjOptions) -> str:
+def action_script(action: str, options: DjOptions, *, coarse=False) -> str:
     if action in ('deck1', 'deck2'):
         return f'{ONCE}set {VARIABLE} {action[-1]}'
     if action == 'none':
         return 'nothing'
     if action == 'reset_all':
         reset = ' & '.join(f'deck {deck} eq_reset & {deck_script(deck, "filter_center", options)}'
-                           f' & deck {deck} level 100%' for deck in (1, 2))
+                           f' & deck {deck} filter_activate on & deck {deck} level 100%' for deck in (1, 2))
         return f'{ONCE}set {VARIABLE} 1 & {reset}'
-    right = deck_script(2, action, options)
-    left = deck_script(1, action, options)
+    right = deck_script(2, action, options, coarse=coarse)
+    left = deck_script(1, action, options, coarse=coarse)
     return f'{ONCE}var_equal {VARIABLE} 2 ? {right} : {left}'
 
 
@@ -131,7 +160,17 @@ def build_mapper(options=None, base=None) -> bytes:
     existing = startup.get('action', '')
     startup.set('action', f'{existing} & {initial}' if existing else initial)
     for key, action in bindings.items():
-        ET.SubElement(root, 'map', {'value': key, 'action': action_script(action, options)})
+        script = action_script(action, options, coarse=key.startswith('NUM'))
+        ET.SubElement(root, 'map', {'value': key, 'action': script})
+    assigned = {node.get('value', '').upper() for node in root.findall('map')}
+    for _label, action, left, right in TRANSPORT_KEYS:
+        for deck, key in enumerate((left, right), 1):
+            chord = f'ALT+{key}'
+            if chord not in assigned:
+                script = f'deck {deck} {action}'
+                if action == 'sync':
+                    script = ONCE + script
+                ET.SubElement(root, 'map', {'value': chord, 'action': script})
     ET.indent(root, space='  ')
     return ET.tostring(root, encoding='UTF-8', xml_declaration=True) + b'\n'
 
@@ -204,16 +243,25 @@ def virtualdj_running() -> bool:
     return virtualdj_pid() is not None
 
 
-def mapper_is_active(options, home=None):
+def mapper_is_selected(home=None):
     home = home or vdj_home()
     try:
-        settings = keyboard_selection((home / 'settings.xml').read_bytes())
-        if settings is None or settings.get('mapper') != MAPPER_NAME:
-            return False
+        selection = keyboard_selection((home / 'settings.xml').read_bytes())
+        return selection is not None and selection.get('mapper') == MAPPER_NAME
+    except (OSError, ValueError, ET.ParseError):
+        return False
+
+
+def mapper_is_active(options, home=None):
+    home = home or vdj_home()
+    if not mapper_is_selected(home):
+        return False
+    try:
         mapper = (home / 'Mappers' / f'{MAPPER_NAME}.xml').read_bytes()
         manifest = home / STATE_DIR / 'installation.json'
         state = json.loads(manifest.read_text('utf-8'))
-        return (state.get('options') == options_data(options)
+        return (state.get('revision') == MAPPER_REVISION
+                and state.get('options') == options_data(options)
                 and state.get('mapper_hash') == hashlib.sha256(mapper).hexdigest())
     except (OSError, ValueError, ET.ParseError):
         return False
@@ -378,7 +426,7 @@ def install_mapping(home: Path | None = None, apply_settings: bool = True,
     state = {'origin': state.get('origin', backup.name),
              'selection_origin': selection_origin.name if already_selected and selection_origin else backup.name,
              'mapper_hash': hashlib.sha256(new_mapper).hexdigest(),
-             'options': options_data(options)}
+             'options': options_data(options), 'revision': MAPPER_REVISION}
     previous_manifest = manifest.read_bytes() if manifest.exists() else None
     atomic_write(manifest, json.dumps(state).encode('utf-8'))
     try:

@@ -30,7 +30,7 @@ import pystray
 from dj_setup import DjOptions
 from dj_state import DeckEstimates
 from keyboard_controls import (
-    ShortcutPresses, foreground_is_virtualdj, identify_key, process_executable,
+    NAVIGATION, ShortcutPresses, foreground_is_virtualdj, identify_key, process_executable,
 )
 import macrobuttons
 
@@ -61,7 +61,6 @@ DEFAULTS = {
     'fx_slots': [],  # other *already loaded and routed* ELKA VST nodes: {name,id}
     'vst_scan_dirs': [],  # optional user-selected plugin folders beyond default VST3 location
     'exclusive_shortcuts': True,  # default: HUD owns all Ctrl+numpad shortcuts
-    'block_numpad_enter': True,  # dedicated Numpad Enter does not reach Windows/games
     'capture_number_row': False,  # optional Ctrl+1..0 top-row mapping (may shadow app shortcuts)
     'suppress_all_numpad': True,
     'shortcut_defaults_v6': False,
@@ -81,7 +80,7 @@ DEFAULTS = {
         '5': 'mid_down', '6': 'mid_up',
         '8': 'high_down', '9': 'high_up',
         '1': 'music_down', '4': 'music_up', '7': 'music_mute',
-        '+': 'clutch', '-': 'bass_reset', '*': 'none', '/': 'none', 'enter': 'none',
+        '+': 'clutch', '-': 'bass_reset', '*': 'none', '/': 'none', 'enter': 'filter_toggle',
     },
     'active_fx_id': None,  # None = primary kHs Filter, or one of fx_slots IDs
     'fx_vst_id': None,  # stable plugin ID from ELKA FX Host > VST > Info
@@ -185,11 +184,12 @@ ACTIONS = {
     'mid_down': 'Mids −1 dB', 'mid_up': 'Mids +1 dB',
     'high_down': 'Highs −1 dB', 'high_up': 'Highs +1 dB',
     'filter_down': 'Filter darker', 'filter_up': 'Filter brighter',
+    'filter_toggle': 'Toggle music filter',
     'music_down': 'Music −2 dB', 'music_up': 'Music +2 dB',
     'music_mute': 'Music mute toggle', 'clutch': 'Clutch toggle',
     'music_fade_up': 'Music fade +2 dB', 'music_fade_down': 'Music fade −2 dB',
     'music_clutch_fade': 'Music clutch fade',
-    'music_bass_drop': 'Bass drop / boost', 'music_normalize': 'Normalize music EQ and volume',
+    'music_bass_drop': 'Bass drop / boost', 'music_normalize': 'Normalize EQ and gain',
     'bass_cut_boost': 'Bass cut / boost', 'bass_reset': 'Bass reset',
 }
 
@@ -320,11 +320,11 @@ class WindowsFilterHotkeys(threading.Thread):
                             other_modifier=bool(info.flags & 0x20) or any(
                                 pressed(vk) for vk in (0x10, 0x12, 0x5B, 0x5C)),
                             mode=mode, exclusive=self.cfg['exclusive_shortcuts'],
-                            block_enter=self.cfg['block_numpad_enter'],
                             number_row=self.cfg['capture_number_row'],
                             music_actions=self.cfg['key_actions'],
                             music_g_keys=self.cfg['music_g_actions'], dj_options=options,
-                            home_action=self.cfg['music_home_action'])
+                            home_action=self.cfg['music_home_action'],
+                            dj_keypad_available=info.vkCode not in NAVIGATION)
                         if command is not None:
                             self.commands.put(command)
                         if suppress:
@@ -362,6 +362,19 @@ def load_config() -> dict:
         data.update(saved)
     except (OSError, ValueError, TypeError):
         pass
+    actions = data.get('key_actions')
+    if not isinstance(actions, dict):
+        actions = DEFAULTS['key_actions']
+    actions = actions.copy()
+    actions.pop('main_enter', None)
+    data.pop('block_numpad_enter', None)
+    if not data.get('keypad_profile_configured'):
+        if actions.get('enter') in (None, 'none'):
+            actions['enter'] = 'filter_toggle'
+        if data.get('dj_enter') in (None, 'sync'):
+            data['dj_enter'] = 'filter_toggle'
+        data['keypad_profile_configured'] = True
+    data['key_actions'] = actions
     return data
 
 
@@ -556,8 +569,8 @@ class HUD:
             self.dj_options = DjOptions.from_config(self.cfg)
         except (ValueError, TypeError):
             self.dj_options = DjOptions()
-        from dj_setup import mapper_is_active
-        self.dj_mapper_ready = mapper_is_active(self.dj_options)
+        from dj_setup import mapper_is_selected
+        self.dj_mapper_selected = mapper_is_selected()
         self.dj_waiting = False
         self.dj_pid = None
         self.dj_estimate_pid = None
@@ -571,8 +584,6 @@ class HUD:
         if not isinstance(self.cfg.get('music_g_actions'), dict):
             self.cfg['music_g_actions'] = {}
         self.cfg['filter_enabled'] = bool(self.cfg.get('filter_enabled', True))
-        if not isinstance(self.cfg.get('key_actions'), dict):
-            self.cfg['key_actions'] = DEFAULTS['key_actions'].copy()
         if not isinstance(self.cfg.get('fx_slots'), list):
             self.cfg['fx_slots'] = []
         self.cfg['fx_slots'] = clean_slots(self.cfg['fx_slots'])
@@ -586,6 +597,7 @@ class HUD:
         self.stop_event = threading.Event()
         self.hotkey_stop_event = threading.Event()
         self.root = tk.Tk()
+        self.context_menu = None
         self.root.title('Voicemeeter Corner HUD')
         self.root.configure(bg=BG)
         self.root.overrideredirect(True)
@@ -952,60 +964,97 @@ class HUD:
                   fg=BG, relief='flat', padx=12, pady=5).pack(pady=4)
 
     def configure_exclusive_shortcuts(self):
+        from tkinter import messagebox, ttk
         popup = tk.Toplevel(self.root)
-        popup.title('Exclusive Ctrl + Numpad shortcuts')
-        popup.configure(bg=BG)
+        popup.title('Music shortcuts')
         popup.attributes('-topmost', True)
-        popup.geometry(f'+{self.root.winfo_x()}+{max(0,self.root.winfo_y()-650)}')
-        tk.Label(popup, text='Exclusive Ctrl + Numpad control', bg=BG, fg=FG,
-                 font=('Segoe UI', 12, 'bold')).pack(pady=(10,4))
-        tk.Label(popup, text='Music Mode captures Ctrl+numpad and assigned G-keys.\n'
-                 'Use F13–F18 for modifier-free iCUE assignments.',
-                 bg=BG, fg=MUTED, justify='left', font=('Segoe UI', 9)).pack(pady=(0,8))
-        exclusive = tk.BooleanVar(value=self.cfg.get('exclusive_shortcuts', False))
-        enter = tk.BooleanVar(value=self.cfg.get('block_numpad_enter', False))
-        toprow = tk.BooleanVar(value=self.cfg.get('capture_number_row', False))
-        tk.Checkbutton(popup, text='Enable exclusive shortcut handling', variable=exclusive,
-                       bg=BG, fg=FG, selectcolor=PANEL, activebackground=BG,
-                       activeforeground=FG).pack(anchor='w', padx=28)
-        tk.Checkbutton(popup, text='Also block bare Numpad Enter from games', variable=enter,
-                       bg=BG, fg=FG, selectcolor=PANEL, activebackground=BG,
-                       activeforeground=FG).pack(anchor='w', padx=28)
-        tk.Checkbutton(popup, text='Also capture Ctrl+number-row 0–9 (use with caution)', variable=toprow,
-                       bg=BG, fg=FG, selectcolor=PANEL, activebackground=BG,
-                       activeforeground=FG).pack(anchor='w', padx=28)
-        fields = tk.Frame(popup, bg=BG); fields.pack(pady=8)
-        labels = {v: k for k,v in ACTIONS.items()}
-        keys = ['1','2','3','4','5','6','7','8','9','0','.','+','-','*','/','enter']
-        g_keys = [f'F{n}' for n in range(13, 19)]
-        extra_keys = ['home', *g_keys]
-        choices = list(ACTIONS.values())
-        vars_ = {}
-        current = self.cfg.get('key_actions', {})
-        for index, key in enumerate(keys + extra_keys):
-            row, pair = (index, 0) if key in keys else (index-len(keys), 2)
-            label = 'Ctrl + Numpad ' + key if pair == 0 else 'Ctrl + Home' if key == 'home' else key
-            action = current.get(key) if pair == 0 else (
-                self.cfg['music_home_action'] if key == 'home' else self.cfg['music_g_actions'].get(key))
-            tk.Label(fields, text=label, bg=BG, fg=FG, anchor='w').grid(
-                row=row, column=pair, padx=3, pady=2, sticky='w')
-            var = tk.StringVar(value=ACTIONS.get(action, 'No assignment'))
-            tk.OptionMenu(fields, var, *choices).grid(row=row, column=pair+1, sticky='ew', padx=3)
-            vars_[key] = var
+        body = ttk.Frame(popup, padding=12)
+        body.pack(fill='both', expand=True)
+
+        capture = ttk.LabelFrame(body, text='Keyboard capture in Music Mode', padding=8)
+        capture.grid(row=0, column=0, columnspan=2, sticky='ew', pady=(0, 8))
+        options = (
+            ('exclusive_shortcuts', 'Capture assigned music keys and reserve Ctrl + Numpad'),
+            ('capture_number_row', 'Also capture Ctrl + top-row numbers'),
+        )
+        flags = {}
+        for setting, label in options:
+            flags[setting] = tk.BooleanVar(popup, self.cfg[setting])
+            ttk.Checkbutton(capture, text=label, variable=flags[setting]).pack(anchor='w')
+
+        numpad = ttk.LabelFrame(body, text='Ctrl + Numpad', padding=8)
+        numpad.grid(row=1, column=0, sticky='new', padx=(0, 8))
+        other = ttk.LabelFrame(body, text='Other keys', padding=8)
+        other.grid(row=1, column=1, sticky='new')
+        bindings = (
+            *((str(n), str(n)) for n in range(10)),
+            ('.', 'Decimal'), ('/', 'Divide'), ('*', 'Multiply'), ('-', 'Minus'),
+            ('+', 'Plus'), ('enter', 'Enter'),
+        )
+        keypad_values = self.shortcut_rows(
+            numpad, ((key, label, self.cfg['key_actions'].get(key)) for key, label in bindings), ACTIONS)
+        other_values = self.shortcut_rows(other, [
+            ('home', 'Ctrl + Home', self.cfg['music_home_action']),
+        ], ACTIONS)
+        advanced = ttk.Frame(other)
+        advanced.grid(row=len(other_values), columnspan=2, sticky='w', pady=(8, 0))
+        g_values = self.optional_virtual_keys(advanced, self.cfg['music_g_actions'], ACTIONS)
+        action_ids = {label: action for action, label in ACTIONS.items()}
+
         def save():
-            self.cfg['exclusive_shortcuts'] = bool(exclusive.get())
-            self.cfg['block_numpad_enter'] = bool(enter.get())
-            self.cfg['capture_number_row'] = bool(toprow.get())
-            self.cfg['key_actions'] = {key: labels[vars_[key].get()] for key in keys
-                                       if labels[vars_[key].get()] != 'none'}
-            self.cfg['music_g_actions'] = {key: labels[vars_[key].get()] for key in g_keys
-                                           if labels[vars_[key].get()] != 'none'}
-            home = labels[vars_['home'].get()]
-            self.cfg['music_home_action'] = None if home == 'none' else home
-            save_config(self.cfg)
+            music = {key: action_ids[var.get()] for key, var in keypad_values.items()}
+            home = action_ids[other_values['home'].get()]
+            g_actions = {key: action_ids[var.get()] for key, var in g_values.items()}
+            updated = {
+                **{key: var.get() for key, var in flags.items()},
+                'key_actions': {key: action for key, action in music.items() if action != 'none'},
+                'music_home_action': None if home == 'none' else home,
+                'music_g_actions': {key: action for key, action in g_actions.items() if action != 'none'},
+            }
+            try:
+                save_config({**self.cfg, **updated}, required=True)
+            except OSError as exc:
+                messagebox.showerror('Could not save Music shortcuts', str(exc), parent=popup)
+                return
+            self.cfg.update(updated)
             popup.destroy()
-        tk.Button(popup, text='Save shortcut settings', bg=GREEN, fg=BG,
-                  relief='flat', command=save, padx=13,pady=6).pack(pady=5)
+
+        footer = ttk.Frame(body)
+        footer.grid(row=2, columnspan=2, sticky='e', pady=(10, 0))
+        ttk.Button(footer, text='Cancel', command=popup.destroy).pack(side='left', padx=(0, 6))
+        ttk.Button(footer, text='Save shortcuts', command=save).pack(side='left')
+
+    @staticmethod
+    def shortcut_rows(parent, bindings, actions):
+        from tkinter import ttk
+        variables = {}
+        for row, (key, key_label, action) in enumerate(bindings):
+            ttk.Label(parent, text=key_label).grid(row=row, column=0, sticky='w', padx=(0, 8), pady=2)
+            value = tk.StringVar(parent, actions.get(action, actions['none']))
+            ttk.Combobox(parent, textvariable=value, values=list(actions.values()), state='readonly',
+                         width=23).grid(row=row, column=1, sticky='ew', pady=2)
+            variables[key] = value
+        return variables
+
+    def optional_virtual_keys(self, parent, current, actions):
+        from tkinter import ttk
+
+        content = ttk.Frame(parent)
+        keys = [f'F{n}' for n in range(13, 19)]
+        fields = self.shortcut_rows(content, ((key, key, current.get(key)) for key in keys), actions)
+        ttk.Label(content, text='These apply only if your iCUE profile sends F13–F18.',
+                  wraplength=210).grid(row=len(fields), columnspan=2, sticky='w', pady=(4, 0))
+        visible = tk.BooleanVar(parent, False)
+
+        def show_or_hide():
+            if visible.get():
+                content.pack(anchor='w', pady=(4, 0))
+            else:
+                content.pack_forget()
+
+        ttk.Checkbutton(parent, text='Show optional virtual keys', variable=visible,
+                        command=show_or_hide).pack(anchor='w')
+        return fields
 
     def manage_effect_slots(self):
         """Configure already-loaded, wired ELKA VST IDs. Not a plugin loader."""
@@ -1163,8 +1212,8 @@ class HUD:
         if self.dj_waiting or self.cfg['dj_mode']:
             if foreground_is_virtualdj():
                 return ('dj_waiting' if self.dj_waiting else 'dj'), self.dj_options
-            return 'idle', self.dj_options
-        if self.dj_mapper_ready and foreground_is_virtualdj():
+            return 'dj_background', self.dj_options
+        if self.dj_mapper_selected and foreground_is_virtualdj():
             if self.cfg['dj_auto_focus'] and not self.dj_auto_blocked:
                 return 'dj_waiting', self.dj_options
             return 'music_vdj', self.dj_options
@@ -1285,7 +1334,7 @@ class HUD:
                     self.dj_pid = self.dj_estimate_pid = launched.pid
                     self.dj_estimates = DeckEstimates()
                     self.dj_connected = False
-        self.dj_mapper_ready = not rollback
+        self.dj_mapper_selected = not rollback
         return True
 
     def install_dj_mapping(self, rollback=False):
@@ -1307,44 +1356,69 @@ class HUD:
     def configure_dj_controls(self):
         from tkinter import messagebox, ttk
         import subprocess
-        from dj_setup import DJ_ACTIONS
+        from dj_setup import DJ_ACTIONS, TRANSPORT_KEYS, mapper_is_active
         popup = tk.Toplevel(self.root)
-        popup.title('VirtualDJ controls')
+        popup.title('VirtualDJ shortcuts')
         popup.attributes('-topmost', True)
-        variables = {}
-        controls = (
-            ('EQ increment %', 'dj_eq_step', self.dj_options.eq_step),
-            ('Filter increment %', 'dj_filter_step', self.dj_options.filter_step),
-            ('Volume increment %', 'dj_volume_step', self.dj_options.volume_step),
-            ('Ctrl+Enter', 'dj_enter', self.dj_options.enter),
-            *((f'G{n - 12} / F{n}', f'F{n}', item)
-              for n, item in enumerate(self.dj_options.g_keys, 13)),
-        )
-        for row, (label, key, current) in enumerate(controls):
-            ttk.Label(popup, text=label).grid(row=row, column=0, sticky='w', padx=8, pady=3)
-            value = variables[key] = tk.StringVar(popup, str(current))
-            widget = (ttk.Entry(popup, textvariable=value, width=16) if isinstance(current, int)
-                      else ttk.Combobox(popup, textvariable=value, values=DJ_ACTIONS,
-                                        state='readonly', width=16))
-            widget.grid(row=row, column=1, padx=8, pady=3)
+        body = ttk.Frame(popup, padding=12)
+        body.pack(fill='both', expand=True)
+
+        increments = ttk.LabelFrame(body, text='Step size (%)', padding=8)
+        increments.pack(fill='x', pady=(0, 8))
+        step_values = {}
+        for index, (label, key, current) in enumerate((
+            ('EQ fine (Ctrl)', 'dj_eq_step', self.dj_options.eq_step),
+            ('EQ fast (bare)', 'dj_eq_coarse_step', self.dj_options.eq_coarse_step),
+            ('Filter', 'dj_filter_step', self.dj_options.filter_step),
+            ('Volume', 'dj_volume_step', self.dj_options.volume_step),
+        )):
+            row, column = divmod(index, 2)
+            ttk.Label(increments, text=label).grid(row=row, column=2 * column, sticky='w', padx=(0, 4), pady=2)
+            step_values[key] = tk.StringVar(popup, str(current))
+            ttk.Entry(increments, textvariable=step_values[key], width=5).grid(
+                row=row, column=2 * column + 1, padx=(0, 9), pady=2)
+
+        bindings = ttk.LabelFrame(body, text='Editable shortcuts', padding=8)
+        bindings.pack(fill='x', pady=(0, 8))
+        f_keys = [f'F{n}' for n in range(13, 19)]
+        custom_values = self.shortcut_rows(
+            bindings, [('dj_enter', 'Ctrl + Numpad Enter', self.dj_options.enter)], DJ_ACTIONS)
+        advanced = ttk.Frame(body)
+        advanced.pack(fill='x', pady=(0, 8))
+        g_values = self.optional_virtual_keys(
+            advanced, dict(zip(f_keys, self.dj_options.g_keys)), DJ_ACTIONS)
+        action_ids = {label: action for action, label in DJ_ACTIONS.items()}
+        ttk.Label(body, text='Numpad Plus syncs the selected deck.\nCtrl + F12 resets both decks.',
+                  justify='left').pack(anchor='w', pady=(0, 8))
+        transport = ttk.LabelFrame(body, text='Regular keyboard defaults', padding=8)
+        transport.pack(fill='x')
+        for col, title in enumerate(('', 'Deck 1', 'Deck 2')):
+            ttk.Label(transport, text=title).grid(row=0, column=col, sticky='w', padx=(0, 12))
+        for row, (label, _action, left, right) in enumerate(TRANSPORT_KEYS, 1):
+            for col, value in enumerate((label, f'Alt + {left}', f'Alt + {right}')):
+                ttk.Label(transport, text=value).grid(row=row, column=col, sticky='w', padx=(0, 12))
 
         def apply():
             try:
-                updated = {key: int(variables[key].get())
-                           for key in ('dj_eq_step', 'dj_filter_step', 'dj_volume_step')}
-                updated['dj_enter'] = variables['dj_enter'].get()
-                updated['dj_g_keys'] = [variables[f'F{n}'].get() for n in range(13, 19)]
+                updated = {key: int(var.get()) for key, var in step_values.items()}
+                updated['dj_enter'] = action_ids[custom_values['dj_enter'].get()]
+                updated['dj_g_keys'] = [action_ids[g_values[key].get()] for key in f_keys]
                 options = DjOptions.from_config(updated)
+                if options == self.dj_options and mapper_is_active(options):
+                    popup.destroy()
+                    return
                 if self.configure_dj_mapping(options):
                     self.dj_options = options
                     self.cfg.update(updated)
-                    save_config(self.cfg)
+                    save_config(self.cfg, required=True)
                     popup.destroy()
             except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
-                messagebox.showerror('VirtualDJ controls', str(exc), parent=popup)
+                messagebox.showerror('VirtualDJ shortcuts', str(exc), parent=popup)
 
-        ttk.Button(popup, text='Apply mapping', command=apply).grid(
-            row=len(controls), columnspan=2, pady=9)
+        footer = ttk.Frame(body)
+        footer.pack(anchor='e', pady=(10, 0))
+        ttk.Button(footer, text='Cancel', command=popup.destroy).pack(side='left', padx=(0, 6))
+        ttk.Button(footer, text='Apply shortcuts', command=apply).pack(side='left')
 
     def update_dj_focus(self):
         now = time.monotonic()
@@ -1445,114 +1519,158 @@ class HUD:
                   bg=PANEL, fg=FG, relief='flat', padx=15).pack()
 
     def open_context(self, ev):
+        self.show_context_menu(ev.x_root, ev.y_root)
+
+    def show_context_menu(self, x, y):
+        if self.context_menu is not None:
+            self.context_menu.destroy()
+        self.context_menu = self.build_context_menu()
+        try:
+            self.context_menu.tk_popup(x, y)
+        finally:
+            self.context_menu.grab_release()
+
+    def build_context_menu(self):
         menu = tk.Menu(self.root, tearoff=False)
-        menu.add_command(label='Switch to ' + ('large' if self.cfg['view_mode'] == 'small' else 'small') + ' view',
-                         command=self.toggle_view_mode)
-        mode = tk.Menu(menu,tearoff=False)
-        mode.add_command(label='Music / Spotify',command=lambda:self.set_dj_mode(False))
-        mode.add_command(label='DJ / VirtualDJ (2 decks)',command=lambda:self.set_dj_mode(True))
-        mode.add_separator()
-        mode.add_command(label='Install / activate VirtualDJ mapper…', command=self.install_dj_mapping)
-        mode.add_command(label='Configure DJ keys and increments…', command=self.configure_dj_controls)
-        mode.add_command(label='Restore previous VirtualDJ mapper…', command=lambda: self.install_dj_mapping(True))
+        mode = tk.Menu(menu, tearoff=False)
+        dj_active = self.cfg['dj_mode']
+        for enabled, label in ((False, 'Music / Spotify'), (True, 'DJ / VirtualDJ (2 decks)')):
+            mode.add_command(label=('✓ ' if dj_active == enabled else '   ') + label,
+                             command=lambda value=enabled: self.set_dj_mode(value))
+        menu.add_cascade(label='Mode · VirtualDJ' if dj_active else 'Mode · Music', menu=mode)
+
+        music = tk.Menu(menu, tearoff=False)
+        self.populate_music_menu(music)
+        menu.add_cascade(label='Music', menu=music)
+
+        dj = tk.Menu(menu, tearoff=False)
+        dj.add_command(label='Shortcuts and step sizes…', command=self.configure_dj_controls)
+        dj.add_command(label='Install or update keyboard mapper…', command=self.install_dj_mapping)
+        dj.add_command(label='Restore previous keyboard mapper…', command=lambda: self.install_dj_mapping(True))
+        dj.add_separator()
         for label, key in (('Enter DJ Mode when VirtualDJ has focus', 'dj_auto_focus'),
                            ('Pause MacroButtons in DJ Mode', 'dj_pause_macrobuttons')):
             var = tk.BooleanVar(self.root, self.cfg[key])
+
             def save_option(setting=key, value=var):
                 self.cfg[setting] = value.get()
                 self.dj_auto_blocked = False
                 save_config(self.cfg)
-            mode.add_checkbutton(label=label, variable=var, command=save_option)
-        menu.add_cascade(label=('● DJ mode' if self.cfg.get('dj_mode') else '● Music mode'),menu=mode)
+
+            dj.add_checkbutton(label=label, variable=var, command=save_option)
+        menu.add_cascade(label='VirtualDJ', menu=dj)
+
+        appearance = tk.Menu(menu, tearoff=False)
+        for value, label in (('small', 'Compact view'), ('large', 'Large view')):
+            appearance.add_command(label=('✓ ' if self.cfg['view_mode'] == value else '   ') + label,
+                                   command=lambda view=value: self.set_view_mode(view))
+        appearance.add_separator()
+        screens = tk.Menu(appearance, tearoff=False)
+        for i, monitor in enumerate(self.monitors()):
+            suffix = ' (primary)' if getattr(monitor, 'is_primary', False) else ''
+            mark = '✓ ' if self.cfg['monitor_index'] == i else '   '
+            screens.add_command(label=f'{mark}Monitor {i+1} · {monitor.width}×{monitor.height}{suffix}',
+                                command=lambda index=i: self.select_monitor(index))
+        appearance.add_cascade(label='Monitor', menu=screens)
+        corners = tk.Menu(appearance, tearoff=False)
+        for value, label in (('bottom-left', 'Bottom left'), ('bottom-right', 'Bottom right')):
+            corners.add_command(label=label, command=lambda corner=value: self.select_corner(corner))
+        appearance.add_cascade(label='Anchor to corner', menu=corners)
+        opacity = tk.Menu(appearance, tearoff=False)
+        for pct in (100, 95, 90, 85, 80, 75, 70, 60, 50, 40, 30, 20):
+            opacity.add_command(label=f'{pct}%', command=lambda percent=pct: self.select_opacity(percent / 100))
+        opacity.add_separator()
+        opacity.add_command(label='Custom slider…', command=self.opacity_dialog)
+        appearance.add_cascade(label=f'Opacity · {round(float(self.cfg["opacity"]) * 100)}%', menu=opacity)
+        menu.add_cascade(label='Appearance', menu=appearance)
         menu.add_separator()
-        menu.add_command(label='Filter darker — Ctrl + Numpad 0', command=lambda: self.step_filter(-1))
-        menu.add_command(label='Filter brighter — Ctrl + Numpad .', command=lambda: self.step_filter(+1))
-        menu.add_command(label=('Filter: ON' if self.cfg['filter_enabled'] else 'Filter: BYPASSED')
-                         + ' — toggle (Numpad Enter)', command=self.toggle_filter_enabled)
+        menu.add_command(label='Hide to tray', command=self.toggle_visibility)
+        menu.add_command(label='Quit HUD', command=self.quit)
+        return menu
+
+    def populate_music_menu(self, menu):
+        menu.add_command(label='Shortcuts…', command=self.configure_exclusive_shortcuts)
+        menu.add_separator()
+        state = 'On' if self.cfg['filter_enabled'] else 'Bypassed'
+        if (state == 'On' and self.cfg['bipolar_position'] == 0
+                and self.selected_effect() == self.cfg.get('fx_vst_id')):
+            state = 'On at center'
+        hint = ''
+        if self.cfg['exclusive_shortcuts']:
+            if self.cfg['key_actions'].get('enter') == 'filter_toggle':
+                hint = '  (Ctrl + Numpad Enter)'
+        menu.add_command(label=f'Toggle filter · {state}{hint}', command=self.toggle_filter_enabled)
+        menu.add_command(label='Filter darker', command=lambda: self.step_filter(-1))
+        menu.add_command(label='Filter brighter', command=lambda: self.step_filter(+1))
+
         types = tk.Menu(menu, tearoff=False)
         can_modes = (self.filter_sender.configured
                      and isinstance(self.cfg.get('fx_type_parameter'), int)
                      and bool(self.cfg.get('fx_type_values')))
         if can_modes:
             for name in self.cfg['fx_type_values']:
-                types.add_command(label=('● ' if self.cfg['fx_type_name'] == name else '   ') + name,
-                                  command=lambda mode=name: self.select_filter_mode(mode))
-        else:
-            types.add_command(label='Configure Type parameter first…', state='disabled')
-        types.add_separator()
+                mark = '✓ ' if self.cfg['fx_type_name'] == name else '   '
+                types.add_command(label=mark + name, command=lambda value=name: self.select_filter_mode(value))
+            types.add_separator()
         types.add_command(label='Configure filter modes…', command=self.configure_filter_types)
-        menu.add_cascade(label='Filter type (kHs)', menu=types)
-        effects=tk.Menu(menu,tearoff=False)
-        chosen=self.selected_effect()
-        primary=self.cfg.get('fx_vst_id')
-        effects.add_command(label=('● ' if chosen == primary else '   ') + 'kHs Filter (current)',
+        menu.add_cascade(label='Kilohearts filter type', menu=types)
+
+        effects = tk.Menu(menu, tearoff=False)
+        chosen = self.selected_effect()
+        primary = self.cfg.get('fx_vst_id')
+        effects.add_command(label=('✓ ' if chosen == primary else '   ') + 'kHs Filter',
                             command=lambda: self.select_effect(None),
                             state='normal' if self.filter_sender.configured else 'disabled')
         for slot in self.cfg['fx_slots']:
-            effects.add_command(label=('● ' if chosen == slot['id'] else '   ') + slot['name'],
-                                command=lambda i=slot['id']: self.select_effect(i))
+            effects.add_command(label=('✓ ' if chosen == slot['id'] else '   ') + slot['name'],
+                                command=lambda identifier=slot['id']: self.select_effect(identifier))
         effects.add_separator()
-        effects.add_command(label='Manage loaded VST slots…',command=self.manage_effect_slots)
-        menu.add_cascade(label='Loaded FX (manual setup)', menu=effects)
+        effects.add_command(label='Manage loaded effects…', command=self.manage_effect_slots)
+        menu.add_cascade(label='Loaded effects', menu=effects)
+
         installed = tk.Menu(menu, tearoff=False)
         installed_items = self.discover_installed()
+        selected_name = normalize_fx_name(self.selected_effect_name())
+        for plugin in installed_items:
+            name = plugin['name']
+            _effect_id, ready = self.installed_match(name)
+            mark = '✓ ' if ready and normalize_fx_name(name) == selected_name else '   '
+            installed.add_command(label=mark + name + ('' if ready else '  (connect once)'),
+                                  command=lambda value=name: self.choose_installed(value))
         if installed_items:
-            for plugin in installed_items:
-                name = plugin['name']
-                _effect_id, ready = self.installed_match(name)
-                selected_name = self.selected_effect_name()
-                marker = '● ' if ready and normalize_fx_name(name) == normalize_fx_name(selected_name) else '   '
-                installed.add_command(label=marker + name + ('' if ready else '  (connect once)'),
-                                      command=lambda n=name: self.choose_installed(n))
+            installed.add_separator()
         else:
             installed.add_command(label='No Kilohearts VST3 bundles found', state='disabled')
-            installed.add_command(label='Check your installed VST3 directories', state='disabled')
-        installed.add_separator()
-        installed.add_command(label='Auto-register from ELKA saves…',command=self.auto_register_elka)
-        installed.add_command(label='Import IDs from saved ELKA layout…',command=self.import_elka_layout)
-        installed.add_command(label='Manage connected effects…', command=self.manage_effect_slots)
         installed.add_command(label='Add VST3 scan folder…', command=self.add_vst_folder)
         menu.add_cascade(label=f'Installed Kilohearts ({len(installed_items)})', menu=installed)
-        menu.add_command(label='Exclusive Ctrl+numpad shortcuts…', command=self.configure_exclusive_shortcuts)
-        menu.add_command(label='Resend settings to FX Host', command=self.reapply_filter)
-        menu.add_command(label='Connect filter VST…', command=self.setup_filter_dialog)
-        menu.add_separator()
-        monitors = self.monitors()
-        for i, mon in enumerate(monitors):
-            suffix = ' (primary)' if getattr(mon, 'is_primary', False) else ''
-            menu.add_command(label=f'Monitor {i+1}: {mon.width}x{mon.height}{suffix}',
-                             command=lambda v=i: self.select_monitor(v))
-        menu.add_separator()
-        menu.add_command(label='Anchor bottom-right', command=lambda: self.select_corner('bottom-right'))
-        menu.add_command(label='Anchor bottom-left', command=lambda: self.select_corner('bottom-left'))
-        menu.add_separator()
-        opacity_menu = tk.Menu(menu, tearoff=False)
-        for pct in (100, 95, 90, 85, 80, 75, 70, 60, 50, 40, 30, 20):
-            opacity_menu.add_command(label=f'{pct}%', command=lambda p=pct: self.select_opacity(p / 100))
-        opacity_menu.add_separator()
-        opacity_menu.add_command(label='Custom slider…', command=self.opacity_dialog)
-        menu.add_cascade(label=f'Opacity ({round(float(self.cfg["opacity"]) * 100)}%)', menu=opacity_menu)
-        menu.add_separator()
-        menu.add_command(label='Hide (restore from system tray)', command=self.toggle_visibility)
-        menu.add_command(label='Quit', command=self.quit)
-        try:
-            menu.tk_popup(ev.x_root, ev.y_root)
-        finally:
-            menu.grab_release()
+
+        host = tk.Menu(menu, tearoff=False)
+        host.add_command(label='Connect filter VST…', command=self.setup_filter_dialog)
+        host.add_command(label='Auto-register from ELKA saves…', command=self.auto_register_elka)
+        host.add_command(label='Import IDs from saved ELKA layout…', command=self.import_elka_layout)
+        host.add_separator()
+        host.add_command(label='Resend settings to FX Host', command=self.reapply_filter)
+        menu.add_cascade(label='ELKA connection', menu=host)
 
     def make_tray(self):
         def dispatch(command):
             return lambda _icon, _item: self.commands.put(command)
+
         menu = pystray.Menu(
             pystray.MenuItem('Show / Hide HUD', dispatch('toggle'), default=True),
+            pystray.MenuItem('Settings…', dispatch('settings')),
             pystray.MenuItem('Switch Music / DJ Mode', dispatch('audio_mode')),
-            pystray.MenuItem('Switch small / large view', dispatch('mode')),
-            pystray.MenuItem('Filter darker (down)', dispatch('filter_down')),
-            pystray.MenuItem('Filter brighter (up)', dispatch('filter_up')),
-            pystray.MenuItem('Filter bypass on / off (Numpad Enter)', dispatch('filter_toggle')),
-            pystray.MenuItem('Resend FX settings', dispatch('filter_resend')),
-            pystray.MenuItem('Move to next monitor', dispatch('next_monitor')),
-            pystray.MenuItem('Anchor bottom-right', dispatch('anchor')),
+            pystray.MenuItem('Music filter', pystray.Menu(
+                pystray.MenuItem('Toggle bypass', dispatch('filter_toggle')),
+                pystray.MenuItem('Darker', dispatch('filter_down')),
+                pystray.MenuItem('Brighter', dispatch('filter_up')),
+                pystray.MenuItem('Resend settings to FX Host', dispatch('filter_resend')),
+            )),
+            pystray.MenuItem('Appearance', pystray.Menu(
+                pystray.MenuItem('Switch compact / large view', dispatch('mode')),
+                pystray.MenuItem('Move to next monitor', dispatch('next_monitor')),
+                pystray.MenuItem('Anchor bottom-right', dispatch('anchor')),
+            )),
             pystray.MenuItem('Exit HUD', dispatch('quit')),
         )
         return pystray.Icon(APP, tray_image(), 'Voicemeeter Corner HUD', menu)
@@ -1689,20 +1807,25 @@ class HUD:
                     self.canvas.create_line(center, y-5, center, y+5, fill=MUTED)
                 else:
                     center = left
+                bypassed = (attribute == 'filter' and not self.dj_connected
+                            and self.dj_estimates.filter_enabled.get(deck) is False)
                 if value is None:
                     display = '—'
                 else:
                     end_pos = left + (right-left) * value / 100
-                    self.canvas.create_line(center, y, end_pos, y, fill=color, width=4)
+                    self.canvas.create_line(center, y, end_pos, y, fill=MUTED if bypassed else color, width=4)
                     display = f'{value:g}%'
                     if attribute == 'filter':
                         display = 'CENTER' if value == 50 else f'{"LP" if value < 50 else "HP"} {value:g}%'
-                self.text(end-5, y, display, size=8, anchor='e')
-        footer = 'CTRL+NUM / OR *  SELECT DECK   ·   F19 RESET BOTH'
+                if bypassed:
+                    display = 'BYPASS'
+                self.text(end-5, y, display, size=8, color=MUTED if bypassed else FG, anchor='e')
+        enter_hint = '   ·   CTRL+NUM ENTER  FILTER' if self.dj_options.enter == 'filter_toggle' else ''
+        footer = 'NUM / OR *  SELECT DECK' + enter_hint
         self.text(13, 190 if small else 229, footer, size=8, color=MUTED)
         if not small:
-            self.text(13, 251, '8/9 HIGH   5/6 MID   2/3 LOW   0/. FILTER', size=9, color=MUTED)
-            self.text(13, 271, '1/4 VOL   7 RESET EQ   - CENTER   + SYNC', size=9, color=MUTED)
+            self.text(13, 251, 'EQ  8/9 HIGH   5/6 MID   2/3 LOW   ·   CTRL FOR FINE', size=9, color=MUTED)
+            self.text(13, 271, '0/. FILTER   - CENTER   + SYNC   1/4 VOL   7 RESET EQ', size=9, color=MUTED)
 
     def draw(self):
         if self.cfg.get('dj_mode'):
@@ -1771,7 +1894,7 @@ class HUD:
                         self.dj_connected = command[1] is not None
                         self.dj_values = command[1] or {}
                     elif command[0] == 'dj_key' and self.cfg['dj_mode']:
-                        self.dj_estimates.apply(command[1], self.dj_options)
+                        self.dj_estimates.apply(command[1], self.dj_options, coarse=command[2])
                     elif command[0] == 'filter_controls':
                         self.filter_probe_running = False
                         _, stable_id, values = command
@@ -1805,10 +1928,14 @@ class HUD:
                     shortcut_log.debug('Music shortcut: %s', act)
                     if act in ('filter_down', 'filter_up'):
                         self.step_filter(-1 if act == 'filter_down' else 1)
+                    elif act == 'filter_toggle':
+                        self.toggle_filter_enabled()
                     elif act in ACTIONS and act != 'none':
                         self.vm_actions.put(act)
                 elif command == 'toggle':
                     self.toggle_visibility()
+                elif command == 'settings':
+                    self.show_context_menu(*self.root.winfo_pointerxy())
                 elif command == 'mode':
                     self.toggle_view_mode()
                 elif command == 'audio_mode':

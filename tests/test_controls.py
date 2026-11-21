@@ -11,7 +11,7 @@ from kilohearts import cutoff_value, filter_controls
 class KeyboardTests(unittest.TestCase):
     def event(self, presses, key, **overrides):
         args = dict(down=True, ctrl=True, other_modifier=False, mode='music',
-                    exclusive=True, block_enter=True, number_row=False,
+                    exclusive=True, number_row=False,
                     music_actions={'8': 'high_down'}, music_g_keys={},
                     dj_options=DjOptions())
         args.update(overrides)
@@ -33,7 +33,7 @@ class KeyboardTests(unittest.TestCase):
         self.assertEqual((True, 'key_action:high_down'), self.event(presses, key))
         self.assertEqual((True, None), self.event(presses, key, mode='dj'))
         self.assertEqual((True, None), self.event(presses, key, down=False, ctrl=False, mode='dj'))
-        self.assertEqual((False, ('dj_key', 'high_down')), self.event(presses, key, mode='dj'))
+        self.assertEqual((False, ('dj_key', 'high_down', False)), self.event(presses, key, mode='dj'))
         self.assertEqual((False, None), self.event(presses, key, down=False))
         self.assertEqual((False, None), self.event(presses, key, exclusive=False))
 
@@ -46,7 +46,7 @@ class KeyboardTests(unittest.TestCase):
             presses, ('function', 'F13'), ctrl=False, music_g_keys={'F13': 'high_down'}))
         self.assertEqual((True, None), self.event(
             presses, ('function', 'F13'), ctrl=False, mode='dj', down=False))
-        self.assertEqual((False, ('dj_key', 'deck1')), self.event(
+        self.assertEqual((False, ('dj_key', 'deck1', False)), self.event(
             presses, ('function', 'F13'), ctrl=False, mode='dj'))
 
     def test_configured_ctrl_home_is_distinct_from_keypad_seven(self):
@@ -68,13 +68,75 @@ class KeyboardTests(unittest.TestCase):
             self.assertEqual((True, None), self.event(presses, key, down=False, mode='dj'))
         self.assertEqual((False, None), self.event(
             ShortcutPresses(), ('row', '8'), mode='music_vdj', exclusive=False))
+        self.assertEqual((False, None), self.event(
+            ShortcutPresses(), ('keypad', '8'), mode='music_vdj', ctrl=False))
+
+    def test_ctrl_keypad_enter_toggles_filter_only_in_music(self):
+        key = ('keypad', 'enter')
+        presses = ShortcutPresses()
+        music_actions = {'enter': 'filter_toggle'}
+        self.assertEqual((True, 'key_action:filter_toggle'),
+                         self.event(presses, key, music_actions=music_actions))
+        self.assertEqual((True, None), self.event(presses, key, music_actions=music_actions))
+        self.assertEqual((True, None), self.event(presses, key, down=False, ctrl=False))
+        self.assertEqual((False, ('dj_key', 'filter_toggle', False)),
+                         self.event(presses, key, mode='dj', music_actions=music_actions))
+        self.assertEqual((False, None), self.event(
+            ShortcutPresses(), key, ctrl=False, music_actions=music_actions))
+        self.assertEqual((False, None), self.event(
+            ShortcutPresses(), ('main', 'enter'), music_actions=music_actions))
+
+    def test_main_ctrl_enter_never_toggles_the_filter(self):
+        key = ('main', 'enter')
+        old_assignment = {'main_enter': 'filter_toggle'}
+        self.assertEqual((False, None),
+                         self.event(ShortcutPresses(), key, music_actions=old_assignment))
+        for mode in ('dj', 'dj_waiting', 'music_vdj'):
+            presses = ShortcutPresses()
+            self.assertEqual((True, None), self.event(presses, key, mode=mode))
+            self.assertEqual((True, None),
+                             self.event(presses, key, down=False, ctrl=False, mode='idle'))
+        self.assertEqual((False, None),
+                         self.event(ShortcutPresses(), key, ctrl=False, mode='dj'))
+
+    def test_dj_owns_bare_keypad_and_reserves_it_when_unfocused(self):
+        key = ('keypad', '8')
+        self.assertEqual((False, ('dj_key', 'high_down', True)),
+                         self.event(ShortcutPresses(), key, mode='dj', ctrl=False))
+        for ctrl in (False, True):
+            self.assertEqual((True, None), self.event(
+                ShortcutPresses(), key, mode='dj_background', ctrl=ctrl))
+        self.assertEqual((True, None), self.event(
+            ShortcutPresses(), key, mode='dj', ctrl=False, dj_keypad_available=False))
+        self.assertEqual((True, None), self.event(
+            ShortcutPresses(), ('keypad', 'enter'), mode='dj', ctrl=False))
+        self.assertEqual((False, None), self.event(ShortcutPresses(), key, ctrl=False))
+
+    def test_holding_keypad_key_does_not_repeat_into_another_app(self):
+        key = ('keypad', '8')
+        presses = ShortcutPresses()
+        self.assertEqual((False, ('dj_key', 'high_down', True)),
+                         self.event(presses, key, mode='dj', ctrl=False))
+        self.assertEqual((True, None),
+                         self.event(presses, key, mode='dj_background', ctrl=False))
+        self.assertEqual((False, None),
+                         self.event(presses, key, mode='dj_background', ctrl=False, down=False))
+
+    def test_ctrl_f12_is_a_physical_reset_shortcut_in_dj_mode(self):
+        key = identify_key(0x7b, 0x58, 0)
+        self.assertEqual(('function', 'F12'), key)
+        self.assertEqual((False, ('dj_key', 'reset_all', False)),
+                         self.event(ShortcutPresses(), key, mode='dj'))
+        self.assertEqual((False, None),
+                         self.event(ShortcutPresses(), key, mode='dj', ctrl=False))
+        self.assertEqual((False, None), self.event(ShortcutPresses(), key))
 
     def test_macrobuttons_transition_blocks_dj_commands_until_ready(self):
         presses = ShortcutPresses()
         key = ('keypad', '*')
         self.assertEqual((True, None), self.event(presses, key, mode='dj_waiting'))
         self.assertEqual((True, None), self.event(presses, key, down=False, mode='dj'))
-        self.assertEqual((False, ('dj_key', 'deck2')), self.event(presses, key, mode='dj'))
+        self.assertEqual((False, ('dj_key', 'deck2', False)), self.event(presses, key, mode='dj'))
 
 
 class EstimateTests(unittest.TestCase):
@@ -91,6 +153,32 @@ class EstimateTests(unittest.TestCase):
         self.assertEqual(47, values.values[1, 'filter'])
         self.assertEqual(53, values.values[2, 'filter'])
         self.assertEqual(2, values.sync_deck)
+
+
+    def test_bare_eq_is_faster_without_changing_other_decks(self):
+        values = DeckEstimates()
+        opts = DjOptions(eq_step=3, eq_coarse_step=8)
+        values.apply('reset_all', opts)
+        values.apply('high_up', opts, coarse=True)
+        values.apply('mid_down', opts)
+        self.assertEqual(58, values.values[1, 'eq_high'])
+        self.assertEqual(47, values.values[1, 'eq_mid'])
+        self.assertEqual(50, values.values[2, 'eq_high'])
+
+    def test_bypass_estimate_preserves_filter_position_and_other_deck(self):
+        values = DeckEstimates()
+        opts = DjOptions()
+        values.apply('deck2', opts)
+        values.apply('filter_toggle', opts)
+        self.assertEqual({}, values.filter_enabled)
+        values.apply('reset_all', opts)
+        values.apply('filter_up', opts)
+        values.apply('filter_toggle', opts)
+        self.assertEqual(55, values.values[1, 'filter'])
+        self.assertEqual({1: False, 2: True}, values.filter_enabled)
+        values.apply('filter_toggle', opts)
+        self.assertTrue(values.filter_enabled[1])
+        self.assertEqual(55, values.values[1, 'filter'])
 
 
 class MacroButtonsTests(unittest.TestCase):

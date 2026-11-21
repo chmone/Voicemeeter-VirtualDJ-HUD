@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,12 +29,30 @@ class MapperTests(unittest.TestCase):
         actions = {n.get("value"): n.get("action") for n in mapper.findall("map")}
         self.assertIn("deck 1 eq_high_freq -4%", actions["CTRL+NUM8"])
         self.assertIn("deck 2 eq_high_freq -4%", actions["CTRL+NUM8"])
-        self.assertIn("deck 2 sync", actions["CTRL+RETURN"])
+        self.assertIn("deck 1 filter_activate", actions["CTRL+RETURN"])
+        self.assertIn("deck 2 filter_activate", actions["CTRL+RETURN"])
+        self.assertIn("deck 2 sync", actions["CTRL+NUM+"])
+        self.assertIn("deck 1 sync", actions["NUM+"])
+        self.assertIn("deck 2 eq_high_freq -8%", actions["NUM8"])
+        self.assertIn("deck 2 filter +3%", actions["NUM."])
+        self.assertIn("deck 1 eq_reset", actions["CTRL+F12"])
         self.assertNotIn("RETURN", actions)
+        self.assertNotIn("NUMENTER", actions)
         self.assertIn("deck 1 filter 50%", actions["CTRL+NUM."])
         self.assertIn("deck 1 filter +3%", actions["CTRL+NUM."])
         self.assertIn("deck 2 level -2%", actions["CTRL+NUM1"])
         self.assertIn("isrepeat", actions["CTRL+NUM/"])
+
+    def test_standard_transport_keys_keep_user_overrides(self):
+        base = b'<mapper device="KEYBOARD"><map value="ALT+Q" action="cue" /></mapper>'
+        root = ET.fromstring(dj_setup.build_mapper(base=base))
+        actions = {item.get('value'): item.get('action') for item in root.findall('map')}
+        self.assertEqual('cue', actions['ALT+Q'])
+        self.assertIn('deck 2 sync', actions['ALT+U'])
+        self.assertEqual('deck 1 play_button', actions['ALT+1'])
+        self.assertEqual('deck 2 cue_button', actions['ALT+8'])
+        self.assertEqual('deck 1 stop_button', actions['ALT+3'])
+        self.assertEqual('deck 2 loop_button', actions['ALT+0'])
 
     def test_bipolar_step_snaps_to_center_in_both_directions(self):
         self.assertEqual(50, dj_setup.filter_position(48, 3))
@@ -87,6 +106,22 @@ class MapperTests(unittest.TestCase):
             selection = dj_setup.keyboard_selection(settings.read_bytes())
             self.assertEqual('KEYBOARD - Other', selection.get('mapper'))
             self.assertEqual('changed', selection.get('option'))
+
+    @patch("dj_setup.virtualdj_running", return_value=False)
+    def test_old_mapper_revision_stays_selected_but_requires_update(self, _running):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            (home / 'settings.xml').write_bytes(SETTINGS)
+            options = dj_setup.DjOptions()
+            dj_setup.install_mapping(home, options=options)
+            self.assertTrue(dj_setup.mapper_is_selected(home))
+            self.assertTrue(dj_setup.mapper_is_active(options, home))
+            manifest = home / dj_setup.STATE_DIR / 'installation.json'
+            data = json.loads(manifest.read_text('utf-8'))
+            data.pop('revision')
+            manifest.write_text(json.dumps(data), encoding='utf-8')
+            self.assertTrue(dj_setup.mapper_is_selected(home))
+            self.assertFalse(dj_setup.mapper_is_active(options, home))
 
     @patch("dj_setup.virtualdj_running", return_value=True)
     def test_disallows_writes_while_running(self, _running):
