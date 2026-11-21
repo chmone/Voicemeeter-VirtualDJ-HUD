@@ -1,0 +1,46 @@
+# Implementation log
+
+## 2026-11-21 | Audit and implementation order
+
+This is the existing v6 source directory, with no Git metadata. `overlay.py` owns Tk, tray state, live Voicemeeter polling, shortcut dispatch and VBAN transmission. `elka_import.py` previously searched guessed property names. `dj_setup.py` writes a dedicated keyboard mapper and attempts activation. The batch launchers use a project virtual environment. HUD preferences live in `%APPDATA%\VoicemeeterCornerHUD\settings.json`.
+
+1. Add a version-checked layout editor and offline tests. Use ELKA startup restoration and keep live FX switching on VBAN.
+2. Match physical numpad scan codes and keep each key's down/up decision paired. Handle MacroButtons explicitly in DJ mode.
+3. Use one VirtualDJ command path at a time. Verify the installed data-directory and mapper shape, and provide scoped rollback.
+4. Check the existing HUD views and preference migration, then verify with isolated fixtures and installed components.
+
+### ELKA 0.8.3.0
+
+The active settings file is `%APPDATA%\ElkaSoft\VoiceMeeterFxHost\wpf-main-window.json`. The legacy fallback is `%LOCALAPPDATA%\ElkaVoiceMeeterFxHost\wpf-main-window.json`. `%LOCALAPPDATA%\ElkaSoft\VoiceMeeterFxHost` contains logs and the extracted plugin worker. The roaming directory also contains the JUCE XML plugin cache. The user's separate Save As export shares the active JSON shape.
+
+The active edition is at the root. Other edition graphs may appear in `EditionWorkspaces`. `PluginNodes` contains the plugin path (`PluginIdentifier`), format, `InstanceId` for VBAN, `Slot` for routing, pin layouts, bypass/power and opaque JUCE state strings. Indexed VBAN parameters are zero-based. The parameter snapshot stores normalized values by index and uses JUCE's MemoryBlock encoding. The installed Banana filter is ID 0 with callback Input L/R on 14 and 15. Potato AUX would use 18 and 19. The native graph has a 16-node limit at this version.
+
+ELKA loads the roaming file during startup, matches plugin paths to scanner choices, remaps saved slots to live slots, and restores the cables. VBAN can address controls or reload an existing instance. The native graph APIs act on the calling process's engine. The worker IPC loads isolated plugins and exposes their metadata. The main application single-instance event activates its window and accepts no layout path. The checked upstream v0.8.3.32 command documentation still describes the same graph-editing limit.
+
+[ELKA 0.8.3.0 source](https://github.com/torment78/Elka.VoiceMeeterFxHost/tree/v0.8.3.0/src) · [VFX commands](https://github.com/torment78/Elka.VoiceMeeterFxHost/blob/v0.8.3.0/VFX_COMMANDS.md)
+
+### VirtualDJ foreground controller
+
+The installed executable reports file version 8.5.9746.0 and the app identifies itself as VirtualDJ 2026 b9746. The current Windows installation uses `HKCU\Software\VirtualDJ\HomeFolder` pointed at `%LOCALAPPDATA%\VirtualDJ`. The advanced editor identified `CTRL+NUM/` and `CTRL+RETURN`. The latter is shared by main and keypad Enter. VirtualDJ saved selection as `settings/controllers/controllersCustomization/controller[@name="KEYBOARD"]/@mapper` using the full filename stem.
+
+The installer uses the native XML format, preserves settings outside the keyboard selection, carries forward unrelated mappings from a selected custom keyboard file, and stores original and before-reinstall backups. Rollback restores the original keyboard selection and mapper without restoring other settings changed since install. Writes are limited to closed VirtualDJ sessions. The native mapper runs one command per press on the selected deck. Numeric EQ verbs target frequency EQ regardless of the skin's STEMS mode. Filter scripts select VirtualDJ's Filter Color FX and snap to 50% when a step lands on or crosses center.
+
+On the installed app, automatic activation persisted across restarts. With the foreground mixer visible, injected Windows keypad events selected Deck 2, changed its volume, and moved its filter to low-pass, back to exact neutral (the mixer displayed OFF), and onward to high-pass. Deck 1's filter stayed centered. The frequency-EQ controls and the F19 two-deck reset were exercised, and the HUD observed the selected-deck Sync command. The decks were unloaded, so beat alignment was outside this check. The app was returned to its Starter layout and prior EQ mode.
+
+Keyboard ownership is paired from down to up. Music recognizes keypad scans with Num Lock off and distinguishes extended navigation/main Enter. The DLL injection flag represents event provenance rather than the original G-key identity. Dedicated F13–F18 actions are available in both profiles. The physical K100/iCUE G-key assignments and game input are still due a hands-on check.
+
+MacroButtons was paused using a close message sent to its verified process window. Live tests observed its exit on DJ Mode entry, Music Mode restoration on VirtualDJ exit, and MacroButtons restarting while the original ELKA and Voicemeeter process IDs stayed stable. The HUD stores a recovery path while MacroButtons is paused and clears it after restoration.
+
+The documented Network Control extension requires Pro. Skin queries are local to VirtualDJ, and the SDK's general-plugin surface would require an extension plus separate license/version validation. The default uses explicitly labeled keyboard estimates from reset/center baselines. The optional licensed read-only polling interface remains opt-in.
+
+[VirtualDJ mapper format](https://virtualdj.com/wiki/ControllerMappingFile_v8.html) · [VDJScript verbs](https://virtualdj.com/manuals/virtualdj/appendix/vdjscriptverbs.html) · [Network Control](https://www.virtualdj.com/wiki/NetworkControlPlugin.html) · [Windows keyboard event structure](https://learn.microsoft.com/en-us/windows/desktop/api/winuser/ns-winuser-kbdllhookstruct)
+
+### Kilohearts filter correction
+
+The verified active layout contains `InstanceId` 0 for the plugin, and the HUD can now import that ID from the roaming save. ELKA's isolated loader reported Type at index 1, High Pass as choice 3, and Cutoff at index 2. The host compares displayed numeric values without converting between displayed units. On this filter, commands above 1000 Hz therefore use kHz while smaller commands use Hz. A live VBAN test of the HUD sender confirmed High Pass at 1.70 kHz and restored the original low-pass cutoff and bypass. The automatic graph-writing work remains pending.
+
+### Existing iCUE profiles
+
+The HUD supports a separately configurable Ctrl+Home action alongside Ctrl+numpad and F13–F18. Music actions include timed relative Voicemeeter fades, mute, clutch fade, bass drop/boost, and normalization. The active user's approved assignments were applied to local HUD settings with a backup. iCUE profiles and MacroButtons maps were read for verification and remain managed by their respective applications.
+
+A live Windows test of the saved G1/G2 chords moved the Spotify strip from 0 to +2 dB and back to 0 dB. A separate test sent the Music Mode filter shortcut across center and ELKA reported its first high-pass setting at 35 Hz. Both tests used synthesized Windows keyboard input.
