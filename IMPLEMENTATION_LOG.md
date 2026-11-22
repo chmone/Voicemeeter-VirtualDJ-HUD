@@ -60,3 +60,15 @@ The Starter skin binds its visible Filter dial to custom Color FX slot 1. The na
 Bare physical Numpad Enter uses the extended Enter scan flag in Windows. The HUD forwards just that press through an internal F20 mapper binding while VirtualDJ is focused in DJ Mode, so the main Enter key retains its normal action. VirtualDJ owns the filter command. The HUD keeps the remembered position visible in gray while bypassed.
 
 Live testing of the native mapper binding centered a turned Starter filter dial, then restored its previous angle when re-enabled. Automated tests exercise the extended Enter down/up routing and the gray position display in both HUD sizes.
+
+Mapper revision 7 initializes both filters centered and bypassed. While bypassed, filter adjustments change a per-deck saved position using the same endpoint limits and neutral snap as the active filter. Enabling applies that position. Resetting both decks also restores centered, bypassed filters.
+
+Mapper revision 8 uses VirtualDJ's auto-loop toggle on Alt+4 so enabling the loop uses the selected length. Alt+5 halves that length and Alt+6 doubles it. The mapper routes all three to the selected deck and ignores key repeats. [VDJScript loop commands](https://virtualdj.com/manuals/virtualdj/appendix/vdjscriptverbs.html)
+
+Mapper revision 9 uses Alt for modified DJ keypad and function-key commands. The hook recognizes the Windows Alt modifier separately so the mapper and HUD agree on the fine EQ step. Music Mode continues to use its saved Ctrl shortcuts.
+
+Mapper revision 10 moves Bass Swap and Reset Both Decks to Alt+7 and Alt+8. Bass Swap compares the two frequency LOW EQ values inside VirtualDJ, cuts the higher value, and boosts the other deck to 60%. The selected deck receives the boost when the values are tied.
+
+MacroButtons 1.1.4.1 reads its startup map from the Windows Documents folder. The HUD snapshots a configured map before requesting a close. On resume it can replace a blank or missing map from that session’s snapshot while the process is stopped. Populated and unfamiliar maps stay in place.
+
+Music Mode’s incremental EQ commands move 1.92 dB per press, 8% of the existing −12 to +12 dB range.

@@ -41,6 +41,7 @@ CONFIG_HOME = Path(os.environ.get('APPDATA', str(Path.home()))) / APP
 CONFIG_HOME.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_HOME / 'settings.json'
 LOG_FILE = CONFIG_HOME / 'hud.log'
+MACROBUTTONS_BACKUP = CONFIG_HOME / 'MacroButtonConfig.before-dj.xml'
 logging.basicConfig(filename=LOG_FILE, level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(message)s')
 shortcut_log = logging.getLogger(APP + '.shortcuts')
@@ -73,6 +74,7 @@ DEFAULTS = {
     'dj_http_readback': False,
     'macrobuttons_resume': None,
     'macrobuttons_pending_pid': None,
+    'macrobuttons_saved_map': False,
     'music_g_actions': {},
     'music_home_action': None,
     'dj_http_base': 'http://127.0.0.1:80',
@@ -107,6 +109,8 @@ ORANGE = '#EEA35B'
 RED = '#FF7474'
 LARGE_SIZE = (366, 306)
 SMALL_SIZE = (240, 132)
+MUSIC_EQ_LIMIT_DB = 12.0
+MUSIC_EQ_STEP_DB = 1.92  # 8% of the full -12 to +12 dB range
 # Each keypress advances exactly one musical (roughly logarithmic) frequency step.
 FILTER_FREQS = (250, 350, 500, 700, 1000, 1500, 2200, 3300, 5000, 7500, 11000, 16000, 20000)
 # In high-pass mode the left-to-right knob moves from a subtle bass rolloff
@@ -182,9 +186,9 @@ def normalize_fx_name(value):
 
 ACTIONS = {
     'none': 'No assignment',
-    'low_down': 'Bass −1 dB', 'low_up': 'Bass +1 dB',
-    'mid_down': 'Mids −1 dB', 'mid_up': 'Mids +1 dB',
-    'high_down': 'Highs −1 dB', 'high_up': 'Highs +1 dB',
+    'low_down': f'Bass −{MUSIC_EQ_STEP_DB:g} dB', 'low_up': f'Bass +{MUSIC_EQ_STEP_DB:g} dB',
+    'mid_down': f'Mids −{MUSIC_EQ_STEP_DB:g} dB', 'mid_up': f'Mids +{MUSIC_EQ_STEP_DB:g} dB',
+    'high_down': f'Highs −{MUSIC_EQ_STEP_DB:g} dB', 'high_up': f'Highs +{MUSIC_EQ_STEP_DB:g} dB',
     'filter_down': 'Filter darker', 'filter_up': 'Filter brighter',
     'filter_toggle': 'Toggle music filter',
     'music_down': 'Music −2 dB', 'music_up': 'Music +2 dB',
@@ -319,8 +323,8 @@ class WindowsFilterHotkeys(threading.Thread):
                         suppress, command = self.presses.event(
                             key, down=not (info.flags & 0x80),
                             ctrl=bool(ctrl_keys) if track_ctrl else pressed(0x11),
-                            other_modifier=bool(info.flags & 0x20) or any(
-                                pressed(vk) for vk in (0x10, 0x12, 0x5B, 0x5C)),
+                            alt=bool(info.flags & 0x20) or pressed(0x12),
+                            other_modifier=any(pressed(vk) for vk in (0x10, 0x5B, 0x5C)),
                             mode=mode, exclusive=self.cfg['exclusive_shortcuts'],
                             number_row=self.cfg['capture_number_row'],
                             music_actions=self.cfg['key_actions'],
@@ -449,7 +453,8 @@ class VoiceReader(threading.Thread):
             band, direction = action.rsplit("_", 1)
             attr = eq_attr[band]
             current = float(getattr(music, attr))
-            setattr(music, attr, max(-12., min(12., current + (1. if direction == "up" else -1.))))
+            step = MUSIC_EQ_STEP_DB if direction == "up" else -MUSIC_EQ_STEP_DB
+            setattr(music, attr, max(-MUSIC_EQ_LIMIT_DB, min(MUSIC_EQ_LIMIT_DB, current + step)))
         elif action in ("music_up", "music_down"):
             music.gain = max(-60., min(12., float(music.gain) + (2. if action == "music_up" else -2.)))
         elif action in ("music_fade_up", "music_fade_down", "music_clutch_fade"):
@@ -1243,9 +1248,11 @@ class HUD:
         if pending and not macrobuttons.wait_for_exit(pending, timeout=0):
             return
         if self.cfg.get('macrobuttons_resume'):
-            macrobuttons.restore(self.cfg['macrobuttons_resume'])
+            backup = MACROBUTTONS_BACKUP if self.cfg.get('macrobuttons_saved_map') else None
+            macrobuttons.restore(self.cfg['macrobuttons_resume'], backup=backup)
             self.cfg['macrobuttons_resume'] = None
             self.cfg['macrobuttons_pending_pid'] = None
+            self.cfg['macrobuttons_saved_map'] = False
             save_config(self.cfg)
 
     def set_dj_mode(self, enabled: bool, manual=True):
@@ -1273,6 +1280,7 @@ class HUD:
                 if self.cfg['dj_pause_macrobuttons']:
                     session = macrobuttons.find_session()
                     if session:
+                        self.cfg['macrobuttons_saved_map'] = macrobuttons.backup_configuration(MACROBUTTONS_BACKUP)
                         self.cfg['macrobuttons_resume'] = session[1]
                         self.cfg['macrobuttons_pending_pid'] = session[0]
                         save_config(self.cfg, required=True)
@@ -1378,7 +1386,7 @@ class HUD:
         increments.pack(fill='x', pady=(0, 8))
         step_values = {}
         for index, (label, key, current) in enumerate((
-            ('EQ fine (Ctrl)', 'dj_eq_step', self.dj_options.eq_step),
+            ('EQ fine (Alt)', 'dj_eq_step', self.dj_options.eq_step),
             ('EQ fast (bare)', 'dj_eq_coarse_step', self.dj_options.eq_coarse_step),
             ('Filter', 'dj_filter_step', self.dj_options.filter_step),
             ('Volume', 'dj_volume_step', self.dj_options.volume_step),
@@ -1400,7 +1408,7 @@ class HUD:
             advanced, dict(zip(f_keys, self.dj_options.g_keys)), DJ_ACTIONS)
         action_ids = {label: action for action, label in DJ_ACTIONS.items()}
         ttk.Label(body, text=('Numpad Plus toggles deck volume zero / full.\n'
-                             f'{BASS_SWAP_BINDING.title()} gives bass to the selected deck.\n'
+                             f'{BASS_SWAP_BINDING.title()} swaps bass between decks.\n'
                              f'{RESET_BOTH_BINDING.title()} resets both decks.'),
                   justify='left').pack(anchor='w', pady=(0, 8))
         transport = ttk.LabelFrame(body, text='Selected-deck transport shortcuts', padding=8)
@@ -1853,7 +1861,7 @@ class HUD:
         footer = 'NUM / OR *  SELECT DECK' + enter_hint
         self.text(13, 190 if small else 229, footer, size=8, color=MUTED)
         if not small:
-            self.text(13, 251, 'EQ  8/9 HIGH   5/6 MID   2/3 LOW   ·   CTRL FOR FINE', size=9, color=MUTED)
+            self.text(13, 251, 'EQ  8/9 HIGH   5/6 MID   2/3 LOW   ·   ALT FOR FINE', size=9, color=MUTED)
             self.text(13, 271, '0/. FILTER   - CENTER   + VOL ZERO/FULL   1/4 VOL   7 RESET EQ', size=9, color=MUTED)
 
     def draw(self):

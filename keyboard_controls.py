@@ -7,7 +7,7 @@ from functools import lru_cache
 import os
 from pathlib import Path
 
-from dj_setup import DJ_CTRL_FUNCTION_KEYS, DJ_KEYPAD_ENTER_ALIAS, NUMPAD_ACTIONS
+from dj_setup import DJ_ALT_DECK_KEYS, DJ_KEYPAD_ENTER_ALIAS, NUMPAD_ACTIONS
 
 VK_KEYS = {0x60 + n: str(n) for n in range(10)}
 VK_KEYS.update({0x6E: '.', 0x6A: '*', 0x6B: '+', 0x6D: '-', 0x6F: '/'})
@@ -34,15 +34,15 @@ def identify_key(vk, scan, flags):
     return None
 
 
-def native_dj_action(key, ctrl, options):
+def native_dj_action(key, alt, options):
     kind, name = key
     if kind == 'keypad':
         if name == 'enter':
-            return options.enter if not ctrl else None
+            return options.enter if not alt else None
         return NUMPAD_ACTIONS.get(name)
-    if kind == 'function':
-        if ctrl:
-            return DJ_CTRL_FUNCTION_KEYS.get(f'CTRL+{name}')
+    if alt and kind == 'row':
+        return DJ_ALT_DECK_KEYS.get(f'ALT+{name}')
+    if not alt and kind == 'function':
         if name in ('F13', 'F14', 'F15', 'F16', 'F17', 'F18', 'F19'):
             return 'reset_all' if name == 'F19' else options.g_keys[int(name[1:]) - 13]
     return None
@@ -52,7 +52,7 @@ class ShortcutPresses:
     def __init__(self):
         self.held = {}
 
-    def event(self, key, *, down, ctrl, other_modifier, mode, exclusive,
+    def event(self, key, *, down, ctrl, alt, other_modifier, mode, exclusive,
               number_row, music_actions, music_g_keys, dj_options,
               home_action=None, dj_keypad_available=True):
         if key is None:
@@ -69,7 +69,7 @@ class ShortcutPresses:
         capture = keypad and mode in ('dj', 'dj_waiting', 'dj_background')
         command = None
         if not other_modifier:
-            dj_action = native_dj_action(key, ctrl, dj_options)
+            dj_action = native_dj_action(key, alt, dj_options) if not ctrl else None
             dj_binding = bool(dj_action and dj_action != 'none')
             if mode == 'dj':
                 if dj_binding and (not keypad or dj_keypad_available):
@@ -77,12 +77,12 @@ class ShortcutPresses:
                         command = ('dj_enter', dj_action)
                     else:
                         capture = False
-                        command = ('dj_key', dj_action, keypad and not ctrl)
+                        command = ('dj_key', dj_action, keypad and not alt)
             elif mode == 'dj_waiting':
                 capture = capture or dj_binding
             elif mode in ('music', 'music_vdj'):
-                capture = mode == 'music_vdj' and ctrl and dj_binding
-                if exclusive:
+                capture = mode == 'music_vdj' and alt and dj_binding
+                if exclusive and not alt:
                     if ctrl and (kind == 'keypad' or (kind == 'row' and number_row)):
                         capture = True
                         if name in music_actions:

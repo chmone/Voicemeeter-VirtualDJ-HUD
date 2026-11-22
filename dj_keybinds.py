@@ -69,7 +69,7 @@ class DjKeybindGuide:
         close.configure(cursor='hand2', padx=5)
         close.pack(side='right')
         close.bind('<ButtonRelease-1>', lambda _event: self.dismiss())
-        label(window, f'EQ step  ·  Bare {options.eq_coarse_step}%   /   Ctrl {options.eq_step}%',
+        label(window, f'EQ step  ·  Bare {options.eq_coarse_step}%   /   Alt {options.eq_step}%',
               fg=self.accent).pack(anchor='w', padx=12, pady=(0, 7))
 
         tables = tk.Frame(window, bg=self.bg)
@@ -90,7 +90,7 @@ class DjKeybindGuide:
             for col, text in enumerate((action, f'Alt+{key}')):
                 label(regular, text, bg=self.panel, bold=bool(col)).grid(
                     row=row, column=col, sticky='w', padx=(0, 4))
-        for row, (key, action) in enumerate(((BASS_SWAP_BINDING, 'Bass to selected deck'),
+        for row, (key, action) in enumerate(((BASS_SWAP_BINDING, 'Swap bass between decks'),
                                               (RESET_BOTH_BINDING, 'Reset both decks')),
                                              len(TRANSPORT_KEYS) + 1):
             label(regular, f'{key.title()}  {action}', bg=self.panel).grid(

@@ -8,10 +8,13 @@ import io
 import os
 from pathlib import Path
 import subprocess
+import xml.etree.ElementTree as ET
 
+from dj_setup import atomic_write
 from keyboard_controls import process_executable
 
 IMAGE = 'VoicemeeterMacroButtons.exe'
+MAP_FILENAME = 'MacroButtonConfig.xml'
 
 
 class PausePending(RuntimeError):
@@ -99,10 +102,58 @@ def pause(session):
         raise RuntimeError('MacroButtons restarted while DJ Mode was starting.')
 
 
-def restore(path):
+def configuration_path():
+    documents = Path.home() / 'Documents'
+    if os.name == 'nt':
+        buffer = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+        if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buffer) == 0:  # CSIDL_PERSONAL
+            documents = Path(buffer.value)
+    return documents / 'Voicemeeter' / MAP_FILENAME
+
+
+def map_has_buttons(content):
+    """Return None for an unfamiliar map and False for a known blank map."""
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError:
+        return None
+    if root.tag != 'VBAudioVoicemeeterMacroButtonMap':
+        return None
+    buttons = root.findall('./MacroButtonConfiguration/MacroButton')
+    if not buttons:
+        return None
+    return any(button.get('key') not in (None, '', '0')
+               or any((child.text or '').strip() for child in button)
+               for button in buttons)
+
+
+def backup_configuration(backup):
+    try:
+        content = configuration_path().read_bytes()
+    except FileNotFoundError:
+        return False
+    if map_has_buttons(content) is not True:
+        return False
+    atomic_write(backup, content)
+    return True
+
+
+def restore(path, *, backup=None):
     if not path or macrobuttons_pids():
         return
     executable = Path(path)
     if executable.name.casefold() != IMAGE.casefold() or not executable.is_file():
         raise RuntimeError('The previous MacroButtons executable could not be restored.')
+    if backup and backup.is_file():
+        saved = backup.read_bytes()
+        config = configuration_path()
+        try:
+            current = config.read_bytes()
+        except FileNotFoundError:
+            current = None
+        if (map_has_buttons(saved) is True
+                and (current is None or map_has_buttons(current) is False)):
+            if macrobuttons_pids():
+                return
+            atomic_write(config, saved)
     subprocess.Popen([str(executable)], cwd=executable.parent)

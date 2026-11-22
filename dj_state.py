@@ -1,5 +1,5 @@
 """Keyboard estimates based on VirtualDJ's default deck, filter and fader positions."""
-from dj_setup import filter_position
+from dj_setup import BASS_SWAP_BOOST, filter_position
 
 
 class DeckEstimates:
@@ -7,7 +7,7 @@ class DeckEstimates:
         self.deck = 1
         self.values = {(deck, control): value for deck in (1, 2)
                        for control, value in (('filter', 50), ('level', 100))}
-        self.filter_enabled = {1: True, 2: True}
+        self.filter_enabled = {1: False, 2: False}
         self.sync_deck = None
 
     def apply(self, action, options, *, coarse=False):
@@ -19,15 +19,20 @@ class DeckEstimates:
             for deck in (1, 2):
                 self.reset_eq(deck)
                 self.values[deck, 'filter'] = 50
-                self.filter_enabled[deck] = True
+                self.filter_enabled[deck] = False
                 self.values[deck, 'level'] = 100
         elif action == 'sync':
             self.sync_deck = self.deck
         elif action == 'eq_reset':
             self.reset_eq(self.deck)
         elif action == 'bass_swap':
-            self.values[3 - self.deck, 'eq_low'] = 0
-            self.values[self.deck, 'eq_low'] = 50
+            low_1 = self.values.get((1, 'eq_low'), 50)
+            low_2 = self.values.get((2, 'eq_low'), 50)
+            boost_deck = self.deck
+            if low_1 != low_2:
+                boost_deck = 1 if low_1 < low_2 else 2
+            self.values[3 - boost_deck, 'eq_low'] = 0
+            self.values[boost_deck, 'eq_low'] = BASS_SWAP_BOOST
         elif action == 'filter_toggle':
             self.filter_enabled[self.deck] = not self.filter_enabled[self.deck]
         elif action == 'filter_center':
@@ -43,8 +48,6 @@ class DeckEstimates:
                 'low': ('eq_low', eq_step), 'filter': ('filter', options.filter_step),
                 'volume': ('level', options.volume_step),
             }[control]
-            if name == 'filter' and not self.filter_enabled[self.deck]:
-                return
             key = self.deck, name
             current = self.values.get(key)
             if current is not None:

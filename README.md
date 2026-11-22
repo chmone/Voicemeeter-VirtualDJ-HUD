@@ -19,7 +19,7 @@ Right-click the HUD, or choose **Settings…** from its system tray icon.
 
 1. Launch VirtualDJ and right-click the HUD. Choose **Mode → DJ / VirtualDJ (2 decks)**.
 2. When the mapper first needs installation or an update, the HUD can restart VirtualDJ to apply it. It waits for a clean exit, backs up affected files, installs `KEYBOARD - Corner HUD DJ.xml`, and selects the mapper for the next launch.
-3. Keep VirtualDJ focused and Num Lock on for DJ commands. DJ Mode reserves the entire numpad, even if focus moves to another app. Closing VirtualDJ or choosing **Music / Spotify** restores the Music profile. By default, the HUD closes a running MacroButtons instance when entering DJ Mode and starts it again when leaving. The **Pause MacroButtons in DJ Mode** menu setting controls that behavior for the next entry.
+3. Keep VirtualDJ focused and Num Lock on for DJ commands. DJ Mode reserves the entire numpad, even if focus moves to another app. Closing VirtualDJ or choosing **Music / Spotify** restores the Music profile. By default, the HUD backs up the active MacroButtons map, closes MacroButtons when entering DJ Mode, and starts it again when leaving. If its active map is blank or missing, the HUD restores that session’s backup before reopening it. The **Pause MacroButtons in DJ Mode** menu setting controls that behavior for the next entry.
 4. **Enter DJ Mode when VirtualDJ has focus** is optional. It uses an already installed mapper. Selecting Music manually overrides automatic entry until the VirtualDJ session ends.
 
 The keybind guide opens next to the corner HUD when you enter DJ Mode with VirtualDJ focused. Use **×** to dismiss it for the session. To bring it back, choose **VirtualDJ → Show keybinds…** and return focus to VirtualDJ.
@@ -39,23 +39,25 @@ The installer detects the current VirtualDJ data directory, including the regist
 | `+` | Set selected deck volume to zero, or to full if it is already zero |
 | `Enter` (bare) | Toggle the selected deck’s filter by default, configurable |
 
-Use the keys bare or with Ctrl, except the filter toggle, which uses bare Numpad Enter. Bare EQ steps are 15% by default. Hold Ctrl for an 8% step. **VirtualDJ → Shortcuts and step sizes…** lets you change both EQ steps, filter and volume steps, and the Numpad Enter assignment. Main Enter remains available to VirtualDJ.
+Use the keys bare or with Alt. The filter toggle uses bare Numpad Enter. Bare EQ steps are 15% by default. Hold Alt for an 8% step. **VirtualDJ → Shortcuts and step sizes…** lets you change both EQ steps, filter and volume steps, and the Numpad Enter assignment. Main Enter remains available to VirtualDJ.
 
-Bipolar filter steps land on 50% when they reach or cross neutral. The next step moves to the other side. Numpad Minus centers immediately. Numpad Enter toggles the selected deck’s filter. The HUD keeps the last filter position visible in gray while bypassed. In VirtualDJ’s Starter layout the visible Filter dial centers during bypass and returns to the remembered position when re-enabled.
+Both deck filters start bypassed. Numpad `0` and `.` adjust the selected deck’s filter in either state. Bipolar steps land on 50% when they reach or cross neutral. Numpad Minus centers the position. The HUD shows the adjustable position in gray while bypassed. Numpad Enter applies the saved position when enabling the filter. In VirtualDJ’s Starter layout the visible Filter dial stays centered during bypass.
 
 | Selected-deck action | Shortcut |
 | --- | --- |
 | Play / pause | Alt+1 |
 | Cue | Alt+2 |
 | Stop | Alt+3 |
-| Loop | Alt+4 |
+| Toggle loop at the current size | Alt+4 |
+| Halve loop size | Alt+5 |
+| Double loop size | Alt+6 |
 | Sync | Alt+Q |
 
-Select the transport deck with Numpad `/` or `*`. A conflicting binding in the previous custom mapper takes precedence for transport. **Ctrl+F11** brings the selected deck’s LOW EQ to neutral and cuts LOW on the other deck. **Ctrl+F12** resets both decks. F13–F18 are optional virtual keys for profiles that explicitly emit them.
+Select the transport deck with Numpad `/` or `*`. A conflicting binding in the previous custom mapper takes precedence for transport. **Alt+7** cuts the deck with the higher LOW EQ to 0% and boosts the other deck to 60%. If their LOW EQ is tied, the selected deck gets the boost. **Alt+8** resets both decks. F13–F18 are optional virtual keys for profiles that explicitly emit them.
 
 ### Deck values
 
-Keyboard control uses VirtualDJ's native mapper and works without Network Control. The HUD labels command-tracked values **Keyboard Estimates** and starts from the default centered filters, full volume faders, and Deck 1. Ctrl+F12 resets both decks’ EQ and filters, returns their volume faders to 100%, and selects Deck 1. The selected deck's EQ reset and filter-center commands also establish estimates for those controls independently. Mouse movements, other controllers, and automatic changes within VirtualDJ can make estimates drift.
+Keyboard control uses VirtualDJ's native mapper and works without Network Control. The HUD labels command-tracked values **Keyboard Estimates** and starts from centered, bypassed filters, full volume faders, and Deck 1. Alt+8 resets both decks’ EQ, centers and bypasses the filters, returns their volume faders to 100%, and selects Deck 1. The selected deck's EQ reset and filter-center commands also establish estimates for those controls independently. Mouse movements, other controllers, and automatic changes within VirtualDJ can make estimates drift.
 
 Existing licensed Network Control installations can opt into readback with `dj_http_readback` and the loopback `dj_http_base` in HUD settings. The [VirtualDJ Network Control documentation](https://www.virtualdj.com/wiki/NetworkControlPlugin.html) requires Pro for that extension.
 
@@ -65,15 +67,17 @@ Exclusive Ctrl+numpad capture is enabled by default. The HUD pairs key-down and 
 
 | Ctrl + Numpad | Default Music action |
 | --- | --- |
-| `8` / `9` | HIGH EQ down / up 1 dB |
-| `5` / `6` | MID EQ down / up 1 dB |
-| `2` / `3` | LOW EQ down / up 1 dB |
+| `8` / `9` | HIGH EQ down / up 1.92 dB |
+| `5` / `6` | MID EQ down / up 1.92 dB |
+| `2` / `3` | LOW EQ down / up 1.92 dB |
 | `0` / `.` | Filter darker / brighter |
 | `Enter` | Toggle music filter bypass |
 | `1` / `4` | Spotify volume down / up 2 dB |
 | `7` | Spotify mute |
 | `+` | Clutch volume toggle |
 | `-` | Bass reset |
+
+Each Music EQ step is 8% of the full −12 to +12 dB range.
 
 ### ELKA and Kilohearts
 

@@ -35,6 +35,14 @@ class MusicActionsTests(unittest.TestCase):
         reader.apply_action(vm, 'music_normalize')
         self.assertEqual((0, 0, 0, 0), (music.gain, music.bass, music.mid, music.treble))
 
+    def test_music_eq_moves_by_8_percent_of_range_and_lands_on_limits(self):
+        reader = VoiceReader({'music_strip': 0}, None, None, None)
+        music = SimpleNamespace(bass=0, mid=11, treble=-11)
+        vm = SimpleNamespace(strip=[music])
+        reader.apply_action(vm, 'low_up')
+        reader.apply_action(vm, 'mid_up')
+        reader.apply_action(vm, 'high_down')
+        self.assertEqual((1.92, 12, -12), (music.bass, music.mid, music.treble))
 
     def test_ctrl_keypad_enter_is_assignable_and_dispatches_to_filter(self):
         self.assertEqual('filter_toggle', DEFAULTS['key_actions']['enter'])
