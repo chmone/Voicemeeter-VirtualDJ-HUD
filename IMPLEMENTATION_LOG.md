@@ -54,3 +54,9 @@ The second mapper revision adds real keyboard transport shortcuts and a physical
 The third mapper revision defaults to 8% Ctrl EQ steps and 15% bare EQ steps. Ctrl+F11 moves the selected deck’s frequency LOW EQ to 50% and the other deck’s to 0%. The keyboard estimate records both positions once the selected deck is known. The DJ shortcut guide follows VirtualDJ foreground focus and uses a nonactivating Windows window.
 
 On VirtualDJ 2026 b9746, the updated mapper stayed selected after restart. Live keyboard tests moved bass to each deck and exercised both EQ step bindings. VirtualDJ retained foreground focus with the guide visible. Both decks were empty during the mixer tests.
+
+The Starter skin binds its visible Filter dial to custom Color FX slot 1. The native mapper now routes the filter commands to that slot in Starter and to the mixer filter in other layouts. Starter bypass stores the dial position and centers the slot. The HUD estimates start with both filters centered and faders at full volume. The selected deck shares one set of Alt transport keys. Numpad 1 and 4 default to 15% volume steps, and Numpad Plus reads the selected deck's actual fader before toggling zero or full. On the installed Starter layout, both filter knobs responded to their respective deck bindings, the volume fader moved in 15% steps, and the Plus shortcut returned the fader from zero to full.
+
+Bare physical Numpad Enter uses the extended Enter scan flag in Windows. The HUD forwards just that press through an internal F20 mapper binding while VirtualDJ is focused in DJ Mode, so the main Enter key retains its normal action. VirtualDJ owns the filter command. The HUD keeps the remembered position visible in gray while bypassed.
+
+Live testing of the native mapper binding centered a turned Starter filter dial, then restored its previous angle when re-enabled. Automated tests exercise the extended Enter down/up routing and the gray position display in both HUD sizes.

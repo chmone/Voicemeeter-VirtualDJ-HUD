@@ -1,12 +1,13 @@
-"""VirtualDJ commands observed by the HUD, with unknown initial knob positions."""
+"""Keyboard estimates based on VirtualDJ's default deck, filter and fader positions."""
 from dj_setup import filter_position
 
 
 class DeckEstimates:
     def __init__(self):
-        self.deck = None
-        self.values = {}
-        self.filter_enabled = {}
+        self.deck = 1
+        self.values = {(deck, control): value for deck in (1, 2)
+                       for control, value in (('filter', 50), ('level', 100))}
+        self.filter_enabled = {1: True, 2: True}
         self.sync_deck = None
 
     def apply(self, action, options, *, coarse=False):
@@ -20,8 +21,6 @@ class DeckEstimates:
                 self.values[deck, 'filter'] = 50
                 self.filter_enabled[deck] = True
                 self.values[deck, 'level'] = 100
-        elif self.deck is None:
-            return
         elif action == 'sync':
             self.sync_deck = self.deck
         elif action == 'eq_reset':
@@ -30,10 +29,12 @@ class DeckEstimates:
             self.values[3 - self.deck, 'eq_low'] = 0
             self.values[self.deck, 'eq_low'] = 50
         elif action == 'filter_toggle':
-            if self.deck in self.filter_enabled:
-                self.filter_enabled[self.deck] = not self.filter_enabled[self.deck]
+            self.filter_enabled[self.deck] = not self.filter_enabled[self.deck]
         elif action == 'filter_center':
             self.values[self.deck, 'filter'] = 50
+        elif action == 'volume_toggle':
+            key = self.deck, 'level'
+            self.values[key] = 100 if self.values[key] == 0 else 0
         elif action != 'none':
             control, direction = action.split('_')
             eq_step = options.eq_coarse_step if coarse else options.eq_step
@@ -42,6 +43,8 @@ class DeckEstimates:
                 'low': ('eq_low', eq_step), 'filter': ('filter', options.filter_step),
                 'volume': ('level', options.volume_step),
             }[control]
+            if name == 'filter' and not self.filter_enabled[self.deck]:
+                return
             key = self.deck, name
             current = self.values.get(key)
             if current is not None:

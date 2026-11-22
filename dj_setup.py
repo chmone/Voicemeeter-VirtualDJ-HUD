@@ -16,9 +16,10 @@ import xml.etree.ElementTree as ET
 
 
 MAPPER_NAME = 'KEYBOARD - Corner HUD DJ'
-MAPPER_REVISION = 3
+MAPPER_REVISION = 6
 DEFAULT_EQ_STEP = 8
 DEFAULT_EQ_COARSE_STEP = 15
+DEFAULT_VOLUME_STEP = 15
 DJ_ACTIONS = {
     'none': 'No action',
     'deck1': 'Select Deck 1', 'deck2': 'Select Deck 2',
@@ -28,10 +29,12 @@ DJ_ACTIONS = {
     'filter_down': 'Filter left', 'filter_up': 'Filter right',
     'filter_center': 'Center filter', 'filter_toggle': 'Toggle deck filter',
     'volume_down': 'Volume down', 'volume_up': 'Volume up',
+    'volume_toggle': 'Toggle deck volume zero / full',
     'eq_reset': 'Reset deck EQ', 'sync': 'Sync deck', 'reset_all': 'Reset both decks',
     'bass_swap': 'Bass swap to selected deck',
 }
 DEFAULT_ENTER_ACTION = 'filter_toggle'
+DJ_KEYPAD_ENTER_ALIAS = 'F20'
 BASS_SWAP_BINDING = 'CTRL+F11'
 RESET_BOTH_BINDING = 'CTRL+F12'
 DJ_CTRL_FUNCTION_KEYS = {BASS_SWAP_BINDING: 'bass_swap', RESET_BOTH_BINDING: 'reset_all'}
@@ -39,26 +42,27 @@ NUMPAD_ACTIONS = {
     '/': 'deck1', '*': 'deck2', '8': 'high_down', '9': 'high_up',
     '5': 'mid_down', '6': 'mid_up', '2': 'low_down', '3': 'low_up',
     '0': 'filter_down', '.': 'filter_up', '1': 'volume_down', '4': 'volume_up',
-    '7': 'eq_reset', '-': 'filter_center', '+': 'sync',
+    '7': 'eq_reset', '-': 'filter_center', '+': 'volume_toggle',
 }
 TRANSPORT_KEYS = (
-    ('Play / pause', 'play_button', '1', '7'),
-    ('Cue', 'cue_button', '2', '8'),
-    ('Stop', 'stop_button', '3', '9'),
-    ('Loop', 'loop_button', '4', '0'),
-    ('Sync', 'sync', 'Q', 'U'),
+    ('Play / pause', 'play_button', '1'),
+    ('Cue', 'cue_button', '2'),
+    ('Stop', 'stop_button', '3'),
+    ('Loop', 'loop_button', '4'),
+    ('Sync', 'sync', 'Q'),
 )
 DEFAULT_G_KEYS = ('deck1', 'deck2', 'sync', 'eq_reset', 'filter_center', 'none')
 VARIABLE = "'$cornerhud_deck'"
 ONCE = 'up ? nothing : isrepeat ? nothing : '
 STATE_DIR = 'Corner HUD Mapper Backups'
+STARTER_LAYOUT = "load_skin 'Default:Starter'"
 
 
 @dataclass(frozen=True)
 class DjOptions:
     eq_step: int = DEFAULT_EQ_STEP
     filter_step: int = 5
-    volume_step: int = 3
+    volume_step: int = DEFAULT_VOLUME_STEP
     enter: str = DEFAULT_ENTER_ACTION
     g_keys: tuple[str, ...] = DEFAULT_G_KEYS
     eq_coarse_step: int = DEFAULT_EQ_COARSE_STEP
@@ -76,7 +80,7 @@ class DjOptions:
             eq_step=cfg.get('dj_eq_step', DEFAULT_EQ_STEP),
             eq_coarse_step=cfg.get('dj_eq_coarse_step', DEFAULT_EQ_COARSE_STEP),
             filter_step=cfg.get('dj_filter_step', 5),
-            volume_step=cfg.get('dj_volume_step', 3),
+            volume_step=cfg.get('dj_volume_step', DEFAULT_VOLUME_STEP),
             enter=cfg.get('dj_enter', DEFAULT_ENTER_ACTION),
             g_keys=tuple(cfg.get('dj_g_keys', DEFAULT_G_KEYS)),
         )
@@ -84,7 +88,7 @@ class DjOptions:
     def bindings(self):
         keys = {f'{modifier}NUM{key}': value for key, value in NUMPAD_ACTIONS.items()
                 for modifier in ('', 'CTRL+')}
-        keys['CTRL+RETURN'] = self.enter
+        keys[DJ_KEYPAD_ENTER_ALIAS] = self.enter
         keys.update({f'F{number}': action for number, action in enumerate(self.g_keys, 13)
                      if action != 'none'})
         keys.update(DJ_CTRL_FUNCTION_KEYS)
@@ -99,16 +103,40 @@ def filter_position(current: float, delta: int) -> float:
     return target
 
 
-def filter_script(deck: int, step: int) -> str:
-    query = f'`deck {deck} filter`'
-    adjust = f'deck {deck} filter {step:+d}%'
-    center = f'deck {deck} filter 50%'
+def bipolar_step(control: str, step: int) -> str:
+    query = f'`{control}`'
+    adjust = f'{control} {step:+d}%'
+    center = f'{control} 50%'
     toward = 'smaller' if step > 0 else 'greater'
     crossing = 'greater' if step > 0 else 'smaller'
     threshold = 50 - step - (0.0001 if step > 0 else -0.0001)
-    return (f"deck {deck} filter_selectcolorfx 'filter' & "
-            f'param_{toward} {query} 50% ? '
+    return (f'param_{toward} {query} 50% ? '
             f'param_{crossing} {query} {threshold:g}% ? {center} : {adjust} : {adjust}')
+
+
+def filter_script(deck: int, action: str, *, step=0) -> str:
+    mixer = f'deck {deck} filter'
+    # Starter's visible FX dial is a separate Color FX slot from the mixer filter.
+    starter = f"deck {deck} effect_colorfx 1 'Filter'"
+    bypassed = f"'$cornerhud_filter_bypass_{deck}'"
+    saved = f"'$cornerhud_starter_filter_{deck}'"
+    select = f"deck {deck} filter_selectcolorfx 'filter'"
+    active = f'deck {deck} filter_activate'
+    if action == 'reset':
+        return (f'set {bypassed} 0 & {STARTER_LAYOUT} ? {starter} 50% : '
+                f'{select} & {mixer} 50% & {active} on')
+    if action == 'center':
+        return (f'{STARTER_LAYOUT} ? set {saved} 0.5 & {starter} 50% : '
+                f'{select} & {mixer} 50%')
+    if action == 'toggle':
+        return (f'{STARTER_LAYOUT} ? var {bypassed} ? '
+                f"set {bypassed} 0 & get_var {saved} & param_cast 'percentage' & {starter} : "
+                f'set {saved} `{starter}` & set {bypassed} 1 & {starter} 50% : '
+                f'var {bypassed} ? set {bypassed} 0 & {active} on : '
+                f'set {bypassed} 1 & {active} off')
+    mixer_step = f'{active} on & {bipolar_step(mixer, step)}'
+    return (f'var {bypassed} ? nothing : {STARTER_LAYOUT} ? {bipolar_step(starter, step)} : '
+            f'{select} ? {mixer_step} : {select} & {mixer_step}')
 
 
 def deck_script(deck: int, action: str, options: DjOptions, *, coarse=False) -> str:
@@ -121,16 +149,18 @@ def deck_script(deck: int, action: str, options: DjOptions, *, coarse=False) -> 
         return f'deck {deck} eq_reset'
     if action == 'bass_swap':
         return f'deck {3 - deck} eq_low_freq 0% & deck {deck} eq_low_freq 50%'
+    if action == 'volume_toggle':
+        return f'param_equal `deck {deck} level` 0% ? deck {deck} level 100% : deck {deck} level 0%'
     if action == 'filter_center':
-        return f"deck {deck} filter_selectcolorfx 'filter' & deck {deck} filter 50%"
+        return filter_script(deck, 'center')
     if action == 'filter_toggle':
-        return f'deck {deck} filter_activate'
-    if action == 'sync':
-        return f'deck {deck} sync'
+        return filter_script(deck, 'toggle')
+    if action in ('sync', 'play_button', 'cue_button', 'stop_button', 'loop_button'):
+        return f'deck {deck} {action}'
     control, direction = action.split('_')
     sign = -1 if direction == 'down' else 1
     if control == 'filter':
-        return filter_script(deck, sign * options.filter_step)
+        return filter_script(deck, 'step', step=sign * options.filter_step)
     verb, step = steps[control]
     return f'deck {deck} {verb} {sign * step:+d}%'
 
@@ -141,12 +171,13 @@ def action_script(action: str, options: DjOptions, *, coarse=False) -> str:
     if action == 'none':
         return 'nothing'
     if action == 'reset_all':
-        reset = ' & '.join(f'deck {deck} eq_reset & {deck_script(deck, "filter_center", options)}'
-                           f' & deck {deck} filter_activate on & deck {deck} level 100%' for deck in (1, 2))
+        reset = ' & '.join(f'deck {deck} eq_reset & ({filter_script(deck, "reset")})'
+                           f' & deck {deck} level 100%' for deck in (1, 2))
         return f'{ONCE}set {VARIABLE} 1 & {reset}'
     right = deck_script(2, action, options, coarse=coarse)
     left = deck_script(1, action, options, coarse=coarse)
-    return f'{ONCE}var_equal {VARIABLE} 2 ? {right} : {left}'
+    prefix = '' if action in ('play_button', 'cue_button', 'stop_button', 'loop_button') else ONCE
+    return f'{prefix}var_equal {VARIABLE} 2 ? {right} : {left}'
 
 
 def build_mapper(options=None, base=None) -> bytes:
@@ -170,14 +201,10 @@ def build_mapper(options=None, base=None) -> bytes:
         script = action_script(action, options, coarse=key.startswith('NUM'))
         ET.SubElement(root, 'map', {'value': key, 'action': script})
     assigned = {node.get('value', '').upper() for node in root.findall('map')}
-    for _label, action, left, right in TRANSPORT_KEYS:
-        for deck, key in enumerate((left, right), 1):
-            chord = f'ALT+{key}'
-            if chord not in assigned:
-                script = f'deck {deck} {action}'
-                if action == 'sync':
-                    script = ONCE + script
-                ET.SubElement(root, 'map', {'value': chord, 'action': script})
+    for _label, action, key in TRANSPORT_KEYS:
+        chord = f'ALT+{key}'
+        if chord not in assigned:
+            ET.SubElement(root, 'map', {'value': chord, 'action': action_script(action, options)})
     ET.indent(root, space='  ')
     return ET.tostring(root, encoding='UTF-8', xml_declaration=True) + b'\n'
 

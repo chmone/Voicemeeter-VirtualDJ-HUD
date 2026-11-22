@@ -29,30 +29,52 @@ class MapperTests(unittest.TestCase):
         actions = {n.get("value"): n.get("action") for n in mapper.findall("map")}
         self.assertIn("deck 1 eq_high_freq -4%", actions["CTRL+NUM8"])
         self.assertIn("deck 2 eq_high_freq -4%", actions["CTRL+NUM8"])
-        self.assertIn("deck 1 filter_activate", actions["CTRL+RETURN"])
-        self.assertIn("deck 2 filter_activate", actions["CTRL+RETURN"])
-        self.assertIn("deck 2 sync", actions["CTRL+NUM+"])
-        self.assertIn("deck 1 sync", actions["NUM+"])
+        self.assertIn("deck 1 filter_activate", actions["F20"])
+        self.assertIn("deck 2 filter_activate", actions["F20"])
+        self.assertIn("deck 2 level 100% : deck 2 level 0%", actions["CTRL+NUM+"])
+        self.assertIn("deck 1 level 100% : deck 1 level 0%", actions["NUM+"])
+        self.assertIn("deck 2 sync : deck 1 sync", actions["ALT+Q"])
         self.assertIn("deck 2 eq_high_freq -15%", actions["NUM8"])
         self.assertIn("deck 2 filter +3%", actions["NUM."])
         self.assertIn("deck 1 eq_reset", actions["CTRL+F12"])
         self.assertNotIn("RETURN", actions)
+        self.assertNotIn("CTRL+RETURN", actions)
         self.assertNotIn("NUMENTER", actions)
         self.assertIn("deck 1 filter 50%", actions["CTRL+NUM."])
         self.assertIn("deck 1 filter +3%", actions["CTRL+NUM."])
         self.assertIn("deck 2 level -2%", actions["CTRL+NUM1"])
         self.assertIn("isrepeat", actions["CTRL+NUM/"])
 
-    def test_standard_transport_keys_keep_user_overrides(self):
-        base = b'<mapper device="KEYBOARD"><map value="ALT+Q" action="cue" /></mapper>'
+    def test_selected_deck_transport_keys_keep_user_overrides(self):
+        base = (b'<mapper device="KEYBOARD"><map value="ALT+Q" action="cue" />'
+                b'<map value="ALT+U" action="playlist" /></mapper>')
         root = ET.fromstring(dj_setup.build_mapper(base=base))
         actions = {item.get('value'): item.get('action') for item in root.findall('map')}
         self.assertEqual('cue', actions['ALT+Q'])
-        self.assertIn('deck 2 sync', actions['ALT+U'])
-        self.assertEqual('deck 1 play_button', actions['ALT+1'])
-        self.assertEqual('deck 2 cue_button', actions['ALT+8'])
-        self.assertEqual('deck 1 stop_button', actions['ALT+3'])
-        self.assertEqual('deck 2 loop_button', actions['ALT+0'])
+        self.assertEqual('playlist', actions['ALT+U'])
+        for shortcut, verb in (('ALT+1', 'play_button'), ('ALT+2', 'cue_button'),
+                               ('ALT+3', 'stop_button'), ('ALT+4', 'loop_button')):
+            self.assertIn(f'{dj_setup.VARIABLE} 2 ? deck 2 {verb} : deck 1 {verb}', actions[shortcut])
+        self.assertTrue({'ALT+7', 'ALT+8', 'ALT+9', 'ALT+0'}.isdisjoint(actions))
+
+    def test_native_filter_targets_starter_control_and_regular_mixer(self):
+        actions = {n.get('value'): n.get('action') for n in ET.fromstring(dj_setup.build_mapper())}
+        self.assertIn("load_skin 'Default:Starter' ?", actions['NUM.'])
+        self.assertIn("deck 2 effect_colorfx 1 'Filter' +5%", actions['NUM.'])
+        self.assertIn("deck 1 filter +5%", actions['NUM.'])
+        self.assertIn("deck 2 effect_colorfx 1 'Filter' 50%", actions['NUM-'])
+        self.assertIn("deck 1 effect_colorfx 1 'Filter' 50%", actions['F20'])
+        self.assertIn("deck 1 filter_activate", actions['F20'])
+        self.assertIn("deck 2 level -15%", actions['NUM1'])
+        self.assertIn("deck 1 level +15%", actions['CTRL+NUM4'])
+
+    def test_volume_toggle_queries_each_decks_current_level(self):
+        actions = {n.get('value'): n.get('action') for n in ET.fromstring(dj_setup.build_mapper())}
+        self.assertEqual(actions['NUM+'], actions['CTRL+NUM+'])
+        self.assertIn('isrepeat ? nothing', actions['NUM+'])
+        for deck in (1, 2):
+            self.assertIn(f'param_equal `deck {deck} level` 0% ? '
+                          f'deck {deck} level 100% : deck {deck} level 0%', actions['NUM+'])
 
     def test_default_eq_steps_and_bass_swap_mapping(self):
         opts = dj_setup.DjOptions.from_config({})

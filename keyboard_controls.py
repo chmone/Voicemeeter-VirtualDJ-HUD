@@ -7,7 +7,7 @@ from functools import lru_cache
 import os
 from pathlib import Path
 
-from dj_setup import DJ_CTRL_FUNCTION_KEYS, NUMPAD_ACTIONS
+from dj_setup import DJ_CTRL_FUNCTION_KEYS, DJ_KEYPAD_ENTER_ALIAS, NUMPAD_ACTIONS
 
 VK_KEYS = {0x60 + n: str(n) for n in range(10)}
 VK_KEYS.update({0x6E: '.', 0x6A: '*', 0x6B: '+', 0x6D: '-', 0x6F: '/'})
@@ -38,7 +38,7 @@ def native_dj_action(key, ctrl, options):
     kind, name = key
     if kind == 'keypad':
         if name == 'enter':
-            return options.enter if ctrl else None
+            return options.enter if not ctrl else None
         return NUMPAD_ACTIONS.get(name)
     if kind == 'function':
         if ctrl:
@@ -71,19 +71,17 @@ class ShortcutPresses:
         if not other_modifier:
             dj_action = native_dj_action(key, ctrl, dj_options)
             dj_binding = bool(dj_action and dj_action != 'none')
-            # VirtualDJ calls both Enter keys CTRL+RETURN. Filter the main key
-            # before its native mapper can treat it like keypad Enter.
-            main_enter_alias = ctrl and key == ('main', 'enter')
             if mode == 'dj':
                 if dj_binding and (not keypad or dj_keypad_available):
-                    capture = False
-                    command = ('dj_key', dj_action, keypad and not ctrl)
-                else:
-                    capture = capture or main_enter_alias
+                    if key == ('keypad', 'enter'):
+                        command = ('dj_enter', dj_action)
+                    else:
+                        capture = False
+                        command = ('dj_key', dj_action, keypad and not ctrl)
             elif mode == 'dj_waiting':
-                capture = capture or dj_binding or main_enter_alias
+                capture = capture or dj_binding
             elif mode in ('music', 'music_vdj'):
-                capture = mode == 'music_vdj' and ctrl and (dj_binding or main_enter_alias)
+                capture = mode == 'music_vdj' and ctrl and dj_binding
                 if exclusive:
                     if ctrl and (kind == 'keypad' or (kind == 'row' and number_row)):
                         capture = True
@@ -95,6 +93,43 @@ class ShortcutPresses:
                         capture, command = True, 'key_action:' + music_g_keys[name]
         self.held[key] = capture
         return capture, command
+
+
+@lru_cache(maxsize=1)
+def _keypad_enter_inputs():
+    class KeyboardInput(ctypes.Structure):
+        _fields_ = [('vk', wintypes.WORD), ('scan', wintypes.WORD), ('flags', wintypes.DWORD),
+                    ('time', wintypes.DWORD), ('extra', ctypes.c_size_t)]
+
+    class MouseInput(ctypes.Structure):
+        _fields_ = [('dx', wintypes.LONG), ('dy', wintypes.LONG), ('data', wintypes.DWORD),
+                    ('flags', wintypes.DWORD), ('time', wintypes.DWORD), ('extra', ctypes.c_size_t)]
+
+    class InputData(ctypes.Union):
+        _fields_ = [('keyboard', KeyboardInput), ('mouse', MouseInput)]
+
+    class Input(ctypes.Structure):
+        _fields_ = [('type', wintypes.DWORD), ('data', InputData)]
+
+    send_input = ctypes.windll.user32.SendInput
+    send_input.argtypes = (wintypes.UINT, ctypes.POINTER(Input), ctypes.c_int)
+    send_input.restype = wintypes.UINT
+    vk = 0x6F + int(DJ_KEYPAD_ENTER_ALIAS[1:])
+    events = (Input * 2)(*(Input(1, InputData(keyboard=KeyboardInput(vk, 0, flags, 0, 0)))
+                           for flags in (0, 0x0002)))  # INPUT_KEYBOARD, KEYEVENTF_KEYUP
+    return send_input, events, ctypes.sizeof(Input)
+
+
+def send_dj_keypad_enter():
+    # VirtualDJ gives both Enter keys the same mapper name. Forward the
+    # distinguished physical keypad key through its dedicated mapper alias.
+    if not foreground_is_virtualdj():
+        return False
+    send_input, events, size = _keypad_enter_inputs()
+    count = send_input(len(events), events, size)
+    if count == 1:
+        send_input(1, ctypes.pointer(events[1]), size)
+    return count == len(events)
 
 
 @lru_cache(maxsize=32)

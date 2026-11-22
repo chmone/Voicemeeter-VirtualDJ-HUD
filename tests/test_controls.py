@@ -1,11 +1,12 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from dj_setup import DjOptions
 from dj_state import DeckEstimates
 from keyboard_controls import ShortcutPresses, identify_key
 import macrobuttons
 from kilohearts import cutoff_value, filter_controls
+from overlay import HUD, MUTED
 
 
 class KeyboardTests(unittest.TestCase):
@@ -61,11 +62,11 @@ class KeyboardTests(unittest.TestCase):
             ShortcutPresses(), home, mode='dj', home_action='music_fade_up'))
 
     def test_music_does_not_leak_active_native_mapper_bindings(self):
-        for key in (('main', 'enter'), ('keypad', '8')):
-            presses = ShortcutPresses()
-            self.assertEqual((True, None), self.event(
-                presses, key, mode='music_vdj', exclusive=False))
-            self.assertEqual((True, None), self.event(presses, key, down=False, mode='dj'))
+        key = ('keypad', '8')
+        presses = ShortcutPresses()
+        self.assertEqual((True, None), self.event(
+            presses, key, mode='music_vdj', exclusive=False))
+        self.assertEqual((True, None), self.event(presses, key, down=False, mode='dj'))
         self.assertEqual((False, None), self.event(
             ShortcutPresses(), ('row', '8'), mode='music_vdj', exclusive=False))
         self.assertEqual((False, None), self.event(
@@ -79,25 +80,35 @@ class KeyboardTests(unittest.TestCase):
                          self.event(presses, key, music_actions=music_actions))
         self.assertEqual((True, None), self.event(presses, key, music_actions=music_actions))
         self.assertEqual((True, None), self.event(presses, key, down=False, ctrl=False))
-        self.assertEqual((False, ('dj_key', 'filter_toggle', False)),
+        self.assertEqual((True, None),
                          self.event(presses, key, mode='dj', music_actions=music_actions))
         self.assertEqual((False, None), self.event(
             ShortcutPresses(), key, ctrl=False, music_actions=music_actions))
         self.assertEqual((False, None), self.event(
             ShortcutPresses(), ('main', 'enter'), music_actions=music_actions))
 
-    def test_main_ctrl_enter_never_toggles_the_filter(self):
+    def test_main_enter_remains_available_in_both_modes(self):
         key = ('main', 'enter')
         old_assignment = {'main_enter': 'filter_toggle'}
         self.assertEqual((False, None),
                          self.event(ShortcutPresses(), key, music_actions=old_assignment))
         for mode in ('dj', 'dj_waiting', 'music_vdj'):
             presses = ShortcutPresses()
-            self.assertEqual((True, None), self.event(presses, key, mode=mode))
-            self.assertEqual((True, None),
+            self.assertEqual((False, None), self.event(presses, key, mode=mode))
+            self.assertEqual((False, None),
                              self.event(presses, key, down=False, ctrl=False, mode='idle'))
         self.assertEqual((False, None),
                          self.event(ShortcutPresses(), key, ctrl=False, mode='dj'))
+
+    def test_bare_numpad_enter_forwards_only_once_in_focused_dj_mode(self):
+        key = identify_key(0x0d, 0x1c, 1)
+        presses = ShortcutPresses()
+        self.assertEqual((True, ('dj_enter', 'filter_toggle')),
+                         self.event(presses, key, ctrl=False, mode='dj'))
+        self.assertEqual((True, None), self.event(presses, key, ctrl=False, mode='dj'))
+        self.assertEqual((True, None),
+                         self.event(presses, key, ctrl=False, mode='music', down=False))
+        self.assertEqual((True, None), self.event(presses, key, ctrl=False, mode='dj_background'))
 
     def test_dj_owns_bare_keypad_and_reserves_it_when_unfocused(self):
         key = ('keypad', '8')
@@ -108,7 +119,7 @@ class KeyboardTests(unittest.TestCase):
                 ShortcutPresses(), key, mode='dj_background', ctrl=ctrl))
         self.assertEqual((True, None), self.event(
             ShortcutPresses(), key, mode='dj', ctrl=False, dj_keypad_available=False))
-        self.assertEqual((True, None), self.event(
+        self.assertEqual((True, ('dj_enter', 'filter_toggle')), self.event(
             ShortcutPresses(), ('keypad', 'enter'), mode='dj', ctrl=False))
         self.assertEqual((False, None), self.event(ShortcutPresses(), key, ctrl=False))
 
@@ -151,11 +162,11 @@ class KeyboardTests(unittest.TestCase):
 
 
 class EstimateTests(unittest.TestCase):
-    def test_unknown_values_need_explicit_baseline_and_decks_stay_independent(self):
+    def test_default_filter_baseline_and_decks_stay_independent(self):
         values = DeckEstimates()
         opts = DjOptions(filter_step=3)
         values.apply('filter_up', opts)
-        self.assertEqual({}, values.values)
+        self.assertEqual((53, 50), tuple(values.values[d, 'filter'] for d in (1, 2)))
         values.apply('reset_all', opts)
         values.apply('filter_down', opts)
         values.apply('deck2', opts)
@@ -179,29 +190,67 @@ class EstimateTests(unittest.TestCase):
     def test_bass_swap_establishes_low_eq_for_both_decks(self):
         values = DeckEstimates()
         opts = DjOptions()
-        values.apply('bass_swap', opts)
-        self.assertEqual({}, values.values)
         values.apply('deck2', opts)
         values.apply('bass_swap', opts)
-        self.assertEqual({(1, 'eq_low'): 0, (2, 'eq_low'): 50}, values.values)
+        self.assertEqual((0, 50), tuple(values.values[d, 'eq_low'] for d in (1, 2)))
         values.apply('deck1', opts)
         values.apply('bass_swap', opts)
-        self.assertEqual({(1, 'eq_low'): 50, (2, 'eq_low'): 0}, values.values)
+        self.assertEqual((50, 0), tuple(values.values[d, 'eq_low'] for d in (1, 2)))
+
+    def test_volume_steps_and_toggle_use_selected_decks_fader(self):
+        values = DeckEstimates()
+        opts = DjOptions()
+        values.apply('volume_down', opts)
+        self.assertEqual(85, values.values[1, 'level'])
+        values.apply('volume_toggle', opts)
+        self.assertEqual(0, values.values[1, 'level'])
+        values.apply('volume_toggle', opts)
+        self.assertEqual(100, values.values[1, 'level'])
+        values.apply('deck2', opts)
+        values.apply('volume_toggle', opts)
+        self.assertEqual((100, 0), tuple(values.values[d, 'level'] for d in (1, 2)))
 
     def test_bypass_estimate_preserves_filter_position_and_other_deck(self):
         values = DeckEstimates()
         opts = DjOptions()
         values.apply('deck2', opts)
         values.apply('filter_toggle', opts)
-        self.assertEqual({}, values.filter_enabled)
+        self.assertEqual({1: True, 2: False}, values.filter_enabled)
         values.apply('reset_all', opts)
         values.apply('filter_up', opts)
         values.apply('filter_toggle', opts)
         self.assertEqual(55, values.values[1, 'filter'])
         self.assertEqual({1: False, 2: True}, values.filter_enabled)
+        values.apply('filter_up', opts)
+        self.assertEqual(55, values.values[1, 'filter'])
         values.apply('filter_toggle', opts)
         self.assertTrue(values.filter_enabled[1])
         self.assertEqual(55, values.values[1, 'filter'])
+
+    def test_both_hud_sizes_render_the_first_filter_step_and_dim_bypass(self):
+        hud = HUD.__new__(HUD)
+        hud.cfg = {'dj_mode': True, 'dj_http_readback': False}
+        hud.dj_options = DjOptions()
+        hud.dj_estimates = DeckEstimates()
+        hud.dj_estimates.apply('filter_up', hud.dj_options)
+        hud.dj_estimates.apply('filter_toggle', hud.dj_options)
+        hud.dj_connected = False
+        hud.dj_focused = True
+        hud.canvas = Mock()
+        hud.round_rect = Mock()
+        hud.text = Mock()
+        hud.draw_mode_button = Mock()
+        for mode, connected in (('small', False), ('large', True)):
+            with self.subTest(mode=mode, connected=connected):
+                hud.cfg['view_mode'] = mode
+                hud.dj_connected = connected
+                hud.dj_values = {(1, 'filter'): '50%', (2, 'filter'): '50%'}
+                hud.text.reset_mock()
+                hud.draw_dj()
+                filter_labels = {call.args[2]: call.kwargs.get('color')
+                                 for call in hud.text.call_args_list}
+                self.assertEqual(MUTED, filter_labels['HP 55%'])
+                self.assertIn('CENTER', filter_labels)
 
 
 class MacroButtonsTests(unittest.TestCase):

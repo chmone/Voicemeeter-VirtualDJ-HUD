@@ -33,29 +33,29 @@ The installer detects the current VirtualDJ data directory, including the regist
 | `5` / `6` | Selected deck mid EQ down / up |
 | `2` / `3` | Selected deck low EQ down / up |
 | `0` / `.` | Selected deck filter left / right |
-| `1` / `4` | Selected deck volume down / up |
+| `1` / `4` | Selected deck volume down / up by 15% by default |
 | `7` | Reset selected deck EQ |
 | `-` | Center selected deck filter |
-| `+` | Sync selected deck |
-| Ctrl + `Enter` | Toggle the selected deck’s filter by default, configurable |
+| `+` | Set selected deck volume to zero, or to full if it is already zero |
+| `Enter` (bare) | Toggle the selected deck’s filter by default, configurable |
 
-Use the keys bare or with Ctrl, except filter bypass, which uses only Ctrl+Numpad Enter. Bare EQ steps are 15% by default. Hold Ctrl for an 8% step. **VirtualDJ → Shortcuts and step sizes…** lets you change both EQ steps, filter and volume steps, and the Ctrl+Numpad Enter assignment. The HUD keeps main Enter separate because VirtualDJ reports both Enter keys as the same binding.
+Use the keys bare or with Ctrl, except the filter toggle, which uses bare Numpad Enter. Bare EQ steps are 15% by default. Hold Ctrl for an 8% step. **VirtualDJ → Shortcuts and step sizes…** lets you change both EQ steps, filter and volume steps, and the Numpad Enter assignment. Main Enter remains available to VirtualDJ.
 
-Bipolar filter steps land on 50% when they reach or cross neutral. The next step moves to the other side. Numpad Minus centers immediately. Ctrl+Numpad Enter toggles the selected deck’s filter while retaining its knob position.
+Bipolar filter steps land on 50% when they reach or cross neutral. The next step moves to the other side. Numpad Minus centers immediately. Numpad Enter toggles the selected deck’s filter. The HUD keeps the last filter position visible in gray while bypassed. In VirtualDJ’s Starter layout the visible Filter dial centers during bypass and returns to the remembered position when re-enabled.
 
-| Regular keyboard | Deck 1 | Deck 2 |
-| --- | --- | --- |
-| Play / pause | Alt+1 | Alt+7 |
-| Cue | Alt+2 | Alt+8 |
-| Stop | Alt+3 | Alt+9 |
-| Loop | Alt+4 | Alt+0 |
-| Sync | Alt+Q | Alt+U |
+| Selected-deck action | Shortcut |
+| --- | --- |
+| Play / pause | Alt+1 |
+| Cue | Alt+2 |
+| Stop | Alt+3 |
+| Loop | Alt+4 |
+| Sync | Alt+Q |
 
-These are the [standard VirtualDJ transport shortcuts](https://virtualdj.com/manuals/hardware/keyboard/default.html). A conflicting binding in the previous custom mapper takes precedence for transport. **Ctrl+F11** brings the selected deck’s LOW EQ to neutral and cuts LOW on the other deck. **Ctrl+F12** resets both decks. F13–F18 are optional virtual keys for profiles that explicitly emit them.
+Select the transport deck with Numpad `/` or `*`. A conflicting binding in the previous custom mapper takes precedence for transport. **Ctrl+F11** brings the selected deck’s LOW EQ to neutral and cuts LOW on the other deck. **Ctrl+F12** resets both decks. F13–F18 are optional virtual keys for profiles that explicitly emit them.
 
 ### Deck values
 
-Keyboard control uses VirtualDJ's native mapper and works without Network Control. The HUD labels command-tracked values **Keyboard Estimates**. Select a deck with `/` or `*` so the HUD can track it. Ctrl+F12 resets both decks’ EQ and filters, returns their volume faders to 100%, and selects Deck 1. That action gives the HUD a known starting point. The selected deck's EQ reset and filter-center commands also establish estimates for those controls independently. Mouse movements, other controllers, and automatic changes within VirtualDJ can make estimates drift. **Sync Sent** reports a keyboard command.
+Keyboard control uses VirtualDJ's native mapper and works without Network Control. The HUD labels command-tracked values **Keyboard Estimates** and starts from the default centered filters, full volume faders, and Deck 1. Ctrl+F12 resets both decks’ EQ and filters, returns their volume faders to 100%, and selects Deck 1. The selected deck's EQ reset and filter-center commands also establish estimates for those controls independently. Mouse movements, other controllers, and automatic changes within VirtualDJ can make estimates drift.
 
 Existing licensed Network Control installations can opt into readback with `dj_http_readback` and the loopback `dj_http_base` in HUD settings. The [VirtualDJ Network Control documentation](https://www.virtualdj.com/wiki/NetworkControlPlugin.html) requires Pro for that extension.
 

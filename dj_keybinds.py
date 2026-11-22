@@ -14,13 +14,13 @@ def keypad_rows(options):
         ('5   6', 'Mid EQ down / up'),
         ('2   3', 'Low EQ down / up'),
         ('0   .', 'Filter left / right'),
-        ('1   4', 'Volume down / up'),
+        ('1   4', f'Volume −/+ {options.volume_step}%'),
         ('7', 'Reset deck EQ'),
         ('−', 'Center filter'),
-        ('+', 'Sync deck'),
+        ('+', 'Volume zero / full'),
     ]
     if options.enter != 'none':
-        rows.append(('Ctrl + Enter', DJ_ACTIONS[options.enter]))
+        rows.append(('Enter', DJ_ACTIONS[options.enter]))
     return rows
 
 
@@ -84,19 +84,17 @@ class DjKeybindGuide:
             label(keypad, key, bg=self.panel, bold=True).grid(row=row, column=0, sticky='w', padx=(0, 7))
             label(keypad, action, bg=self.panel).grid(row=row, column=1, sticky='w')
 
-        label(regular, 'Keyboard defaults', bg=self.panel, fg=self.accent, bold=True).grid(
-            row=0, column=0, columnspan=3, sticky='w', pady=(0, 4))
-        for col, text in enumerate(('', 'Deck 1', 'Deck 2')):
-            label(regular, text, bg=self.panel, fg=self.muted).grid(row=1, column=col, sticky='w')
-        for row, (action, _verb, left, right) in enumerate(TRANSPORT_KEYS, 2):
-            for col, text in enumerate((action, f'Alt+{left}', f'Alt+{right}')):
+        label(regular, 'Selected-deck transport', bg=self.panel, fg=self.accent, bold=True).grid(
+            row=0, column=0, columnspan=2, sticky='w', pady=(0, 4))
+        for row, (action, _verb, key) in enumerate(TRANSPORT_KEYS, 1):
+            for col, text in enumerate((action, f'Alt+{key}')):
                 label(regular, text, bg=self.panel, bold=bool(col)).grid(
                     row=row, column=col, sticky='w', padx=(0, 4))
         for row, (key, action) in enumerate(((BASS_SWAP_BINDING, 'Bass to selected deck'),
                                               (RESET_BOTH_BINDING, 'Reset both decks')),
-                                             len(TRANSPORT_KEYS) + 2):
+                                             len(TRANSPORT_KEYS) + 1):
             label(regular, f'{key.title()}  {action}', bg=self.panel).grid(
-                row=row, column=0, columnspan=3, sticky='w', pady=(3, 0))
+                row=row, column=0, columnspan=2, sticky='w', pady=(3, 0))
         window.update_idletasks()
         return window
 

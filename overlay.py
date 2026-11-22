@@ -32,6 +32,7 @@ from dj_setup import BASS_SWAP_BINDING, RESET_BOTH_BINDING, DjOptions
 from dj_state import DeckEstimates
 from keyboard_controls import (
     NAVIGATION, ShortcutPresses, foreground_is_virtualdj, identify_key, process_executable,
+    send_dj_keypad_enter,
 )
 import macrobuttons
 
@@ -326,6 +327,8 @@ class WindowsFilterHotkeys(threading.Thread):
                             music_g_keys=self.cfg['music_g_actions'], dj_options=options,
                             home_action=self.cfg['music_home_action'],
                             dj_keypad_available=info.vkCode not in NAVIGATION)
+                        if isinstance(command, tuple) and command[0] == 'dj_enter':
+                            command = ('dj_key', command[1], False) if send_dj_keypad_enter() else None
                         if command is not None:
                             self.commands.put(command)
                         if suppress:
@@ -1390,22 +1393,20 @@ class HUD:
         bindings.pack(fill='x', pady=(0, 8))
         f_keys = [f'F{n}' for n in range(13, 19)]
         custom_values = self.shortcut_rows(
-            bindings, [('dj_enter', 'Ctrl + Numpad Enter', self.dj_options.enter)], DJ_ACTIONS)
+            bindings, [('dj_enter', 'Numpad Enter', self.dj_options.enter)], DJ_ACTIONS)
         advanced = ttk.Frame(body)
         advanced.pack(fill='x', pady=(0, 8))
         g_values = self.optional_virtual_keys(
             advanced, dict(zip(f_keys, self.dj_options.g_keys)), DJ_ACTIONS)
         action_ids = {label: action for action, label in DJ_ACTIONS.items()}
-        ttk.Label(body, text=('Numpad Plus syncs the selected deck.\n'
+        ttk.Label(body, text=('Numpad Plus toggles deck volume zero / full.\n'
                              f'{BASS_SWAP_BINDING.title()} gives bass to the selected deck.\n'
                              f'{RESET_BOTH_BINDING.title()} resets both decks.'),
                   justify='left').pack(anchor='w', pady=(0, 8))
-        transport = ttk.LabelFrame(body, text='Regular keyboard defaults', padding=8)
+        transport = ttk.LabelFrame(body, text='Selected-deck transport shortcuts', padding=8)
         transport.pack(fill='x')
-        for col, title in enumerate(('', 'Deck 1', 'Deck 2')):
-            ttk.Label(transport, text=title).grid(row=0, column=col, sticky='w', padx=(0, 12))
-        for row, (label, _action, left, right) in enumerate(TRANSPORT_KEYS, 1):
-            for col, value in enumerate((label, f'Alt + {left}', f'Alt + {right}')):
+        for row, (label, _action, key) in enumerate(TRANSPORT_KEYS):
+            for col, value in enumerate((label, f'Alt + {key}')):
                 ttk.Label(transport, text=value).grid(row=row, column=col, sticky='w', padx=(0, 12))
 
         def apply():
@@ -1816,7 +1817,9 @@ class HUD:
             for row, (label, attribute) in enumerate(controls):
                 y = 80 + row * (21 if small else 29)
                 key = deck, attribute
-                raw = self.dj_values.get(key) if self.dj_connected else self.dj_estimates.values.get(key)
+                bypassed = attribute == 'filter' and self.dj_estimates.filter_enabled.get(deck) is False
+                raw = (self.dj_estimates.values.get(key) if bypassed or not self.dj_connected
+                       else self.dj_values.get(key))
                 value = raw
                 if isinstance(raw, str):
                     try:
@@ -1835,8 +1838,6 @@ class HUD:
                     self.canvas.create_line(center, y-5, center, y+5, fill=MUTED)
                 else:
                     center = left
-                bypassed = (attribute == 'filter' and not self.dj_connected
-                            and self.dj_estimates.filter_enabled.get(deck) is False)
                 if value is None:
                     display = '—'
                 else:
@@ -1845,15 +1846,15 @@ class HUD:
                     display = f'{value:g}%'
                     if attribute == 'filter':
                         display = 'CENTER' if value == 50 else f'{"LP" if value < 50 else "HP"} {value:g}%'
-                if bypassed:
+                if bypassed and value is None:
                     display = 'BYPASS'
                 self.text(end-5, y, display, size=8, color=MUTED if bypassed else FG, anchor='e')
-        enter_hint = '   ·   CTRL+NUM ENTER  FILTER' if self.dj_options.enter == 'filter_toggle' else ''
+        enter_hint = '   ·   NUM ENTER  FILTER' if self.dj_options.enter == 'filter_toggle' else ''
         footer = 'NUM / OR *  SELECT DECK' + enter_hint
         self.text(13, 190 if small else 229, footer, size=8, color=MUTED)
         if not small:
             self.text(13, 251, 'EQ  8/9 HIGH   5/6 MID   2/3 LOW   ·   CTRL FOR FINE', size=9, color=MUTED)
-            self.text(13, 271, '0/. FILTER   - CENTER   + SYNC   1/4 VOL   7 RESET EQ', size=9, color=MUTED)
+            self.text(13, 271, '0/. FILTER   - CENTER   + VOL ZERO/FULL   1/4 VOL   7 RESET EQ', size=9, color=MUTED)
 
     def draw(self):
         if self.cfg.get('dj_mode'):
