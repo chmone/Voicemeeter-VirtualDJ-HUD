@@ -78,3 +78,7 @@ Mapper revision 11 assigns Alt+W to the selected deck’s frequency EQ minimum. 
 DJ EQ readouts use 100% at neutral. Mapper commands and bars still use the native knob position, from 0% to 100% of travel.
 
 Mapper revision 12 makes Numpad Minus center the selected deck’s three EQ bands and filter in one press. It reuses the filter-center action to preserve the current bypass state and keeps the deck’s volume fader in place.
+
+Mapper revision 13 gates both keypad profiles on Num Lock. The Windows hook pairs the physical key transitions and routes foreground DJ commands through reserved F20–F24 mapper keys. Windows handles keypad input normally with Num Lock on. Music Mode can preserve separate Ctrl-based iCUE aliases. F5 and F6 switch A1/A2 bus mutes in the Music macro layer.
+
+On Windows, VirtualDJ loaded revision 13 on restart. Numpad 1 left the fader in place with Num Lock on. With Num Lock off, Numpad 1 and 4 moved each selected deck's fader and Alt+Numpad 8 changed the selected deck's HIGH EQ. Closing VirtualDJ returned the HUD to Music Mode. Voicemeeter Banana 2.1.3.0 readback confirmed the bare keypad HIGH EQ step and both F5/F6 mute pairs with the same A1/A2 gains. The physical K100 and game input were outside this verification.

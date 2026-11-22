@@ -31,8 +31,8 @@ from dj_keybinds import DjKeybindGuide
 from dj_setup import BASS_SWAP_BINDING, EQ_MINIMUM_BINDING, RESET_BOTH_BINDING, DjOptions
 from dj_state import DeckEstimates
 from keyboard_controls import (
-    NAVIGATION, ShortcutPresses, foreground_is_virtualdj, identify_key, process_executable,
-    send_dj_keypad_enter,
+    NAVIGATION, VK_NUMLOCK, ShortcutPresses, foreground_is_virtualdj, identify_key, process_executable,
+    send_dj_keypad,
 )
 import macrobuttons
 
@@ -63,7 +63,7 @@ DEFAULTS = {
     'fx_type_values': {},  # fill exact Type parameter choices from ELKA Info; never guess
     'fx_slots': [],  # other *already loaded and routed* ELKA VST nodes: {name,id}
     'vst_scan_dirs': [],  # optional user-selected plugin folders beyond default VST3 location
-    'exclusive_shortcuts': True,  # default: HUD owns all Ctrl+numpad shortcuts
+    'exclusive_shortcuts': True,  # enable Num Lock-off macros and saved shortcut aliases
     'capture_number_row': False,  # optional Ctrl+1..0 top-row mapping (may shadow app shortcuts)
     'suppress_all_numpad': True,
     'shortcut_defaults_v6': False,
@@ -77,6 +77,7 @@ DEFAULTS = {
     'macrobuttons_saved_map': False,
     'music_g_actions': {},
     'music_home_action': None,
+    'music_ctrl_num_actions': None,
     'dj_http_base': 'http://127.0.0.1:80',
     'key_actions': {
         '0': 'filter_down', '.': 'filter_up',
@@ -197,6 +198,7 @@ ACTIONS = {
     'music_clutch_fade': 'Music clutch fade',
     'music_bass_drop': 'Bass drop / boost', 'music_normalize': 'Normalize EQ and gain',
     'bass_cut_boost': 'Bass cut / boost', 'bass_reset': 'Bass reset',
+    'speakers': 'Switch to A1 speakers', 'headphones': 'Switch to A2 headphones',
 }
 
 
@@ -297,10 +299,13 @@ class WindowsFilterHotkeys(threading.Thread):
         user.UnhookWindowsHookEx.argtypes = (wintypes.HHOOK,)
         user.GetAsyncKeyState.argtypes = (ctypes.c_int,)
         user.GetAsyncKeyState.restype = ctypes.c_short
+        user.GetKeyState.argtypes = (ctypes.c_int,)
+        user.GetKeyState.restype = ctypes.c_short
 
         def pressed(vk):
             return bool(user.GetAsyncKeyState(vk) & 0x8000)
 
+        self.presses = ShortcutPresses(bool(user.GetKeyState(VK_NUMLOCK) & 1), pressed(VK_NUMLOCK))
         ctrl_keys = set()
         track_ctrl = False
 
@@ -310,6 +315,9 @@ class WindowsFilterHotkeys(threading.Thread):
             if code == 0:
                 try:
                     info = ctypes.cast(lparam, ctypes.POINTER(KeyboardEvent)).contents
+                    down = not (info.flags & 0x80)
+                    if info.vkCode == VK_NUMLOCK:
+                        self.presses.num_lock_event(down)
                     if info.vkCode in (0x11, 0xA2, 0xA3):
                         track_ctrl = True
                         is_right = info.vkCode == 0xA3 or bool(info.flags & 1)
@@ -319,20 +327,26 @@ class WindowsFilterHotkeys(threading.Thread):
                             ctrl_keys.add(is_right)
                     key = identify_key(info.vkCode, info.scanCode, info.flags)
                     if key is not None:
+                        ctrl = bool(ctrl_keys) if track_ctrl else pressed(0x11)
+                        alt = bool(info.flags & 0x20) or pressed(0x12)
+                        other = any(pressed(vk) for vk in (0x10, 0x5B, 0x5C))
+                        # A real, unmodified digit reflects the keyboard layout's
+                        # lock state even if a toggle occurred on a secure desktop.
+                        if (down and not (ctrl or alt or other or info.flags & 0x10)
+                                and key[0] == 'keypad' and key[1] in '0123456789.'):
+                            self.presses.num_lock = info.vkCode not in NAVIGATION
                         mode, options = self.input_mode()
                         suppress, command = self.presses.event(
-                            key, down=not (info.flags & 0x80),
-                            ctrl=bool(ctrl_keys) if track_ctrl else pressed(0x11),
-                            alt=bool(info.flags & 0x20) or pressed(0x12),
-                            other_modifier=any(pressed(vk) for vk in (0x10, 0x5B, 0x5C)),
+                            key, down=down, ctrl=ctrl, alt=alt, other_modifier=other,
                             mode=mode, exclusive=self.cfg['exclusive_shortcuts'],
                             number_row=self.cfg['capture_number_row'],
                             music_actions=self.cfg['key_actions'],
                             music_g_keys=self.cfg['music_g_actions'], dj_options=options,
                             home_action=self.cfg['music_home_action'],
-                            dj_keypad_available=info.vkCode not in NAVIGATION)
-                        if isinstance(command, tuple) and command[0] == 'dj_enter':
-                            command = ('dj_key', command[1], False) if send_dj_keypad_enter() else None
+                            music_ctrl_actions=self.cfg['music_ctrl_num_actions'])
+                        if isinstance(command, tuple) and command[0] == 'dj_keypad':
+                            _, keypad_key, action, coarse = command
+                            command = ('dj_key', action, coarse) if send_dj_keypad(keypad_key) else None
                         if command is not None:
                             self.commands.put(command)
                         if suppress:
@@ -449,7 +463,13 @@ class VoiceReader(threading.Thread):
     def apply_action(self, vm, action):
         music = vm.strip[int(self.cfg["music_strip"])]
         eq_attr = {"low": "bass", "mid": "mid", "high": "treble"}
-        if action.endswith(("_up", "_down")) and action.rsplit("_", 1)[0] in eq_attr:
+        if action == 'speakers':
+            vm.bus[1].mute = True
+            vm.bus[0].mute = False
+        elif action == 'headphones':
+            vm.bus[0].mute = True
+            vm.bus[1].mute = False
+        elif action.endswith(("_up", "_down")) and action.rsplit("_", 1)[0] in eq_attr:
             band, direction = action.rsplit("_", 1)
             attr = eq_attr[band]
             current = float(getattr(music, attr))
@@ -987,7 +1007,7 @@ class HUD:
         capture = ttk.LabelFrame(body, text='Keyboard capture in Music Mode', padding=8)
         capture.grid(row=0, column=0, columnspan=2, sticky='ew', pady=(0, 8))
         options = (
-            ('exclusive_shortcuts', 'Capture assigned music keys and reserve Ctrl + Numpad'),
+            ('exclusive_shortcuts', 'Enable Num Lock-off keypad macros and saved shortcuts'),
             ('capture_number_row', 'Also capture Ctrl + top-row numbers'),
         )
         flags = {}
@@ -995,9 +1015,9 @@ class HUD:
             flags[setting] = tk.BooleanVar(popup, self.cfg[setting])
             ttk.Checkbutton(capture, text=label, variable=flags[setting]).pack(anchor='w')
 
-        numpad = ttk.LabelFrame(body, text='Ctrl + Numpad', padding=8)
+        numpad = ttk.LabelFrame(body, text='Numpad (Num Lock off)', padding=8)
         numpad.grid(row=1, column=0, sticky='new', padx=(0, 8))
-        other = ttk.LabelFrame(body, text='Other keys', padding=8)
+        other = ttk.LabelFrame(body, text='Saved shortcuts', padding=8)
         other.grid(row=1, column=1, sticky='new')
         bindings = (
             *((str(n), str(n)) for n in range(10)),
@@ -1009,8 +1029,10 @@ class HUD:
         other_values = self.shortcut_rows(other, [
             ('home', 'Ctrl + Home', self.cfg['music_home_action']),
         ], ACTIONS)
+        ttk.Label(other, text='Num Lock off\nF5  A1 speakers\nF6  A2 headphones', justify='left').grid(
+            row=len(other_values), columnspan=2, sticky='w', pady=(8, 0))
         advanced = ttk.Frame(other)
-        advanced.grid(row=len(other_values), columnspan=2, sticky='w', pady=(8, 0))
+        advanced.grid(row=len(other_values) + 1, columnspan=2, sticky='w', pady=(8, 0))
         g_values = self.optional_virtual_keys(advanced, self.cfg['music_g_actions'], ACTIONS)
         action_ids = {label: action for action, label in ACTIONS.items()}
 
@@ -1635,7 +1657,7 @@ class HUD:
         hint = ''
         if self.cfg['exclusive_shortcuts']:
             if self.cfg['key_actions'].get('enter') == 'filter_toggle':
-                hint = '  (Ctrl + Numpad Enter)'
+                hint = '  (Numpad Enter, Num Lock off)'
         menu.add_command(label=f'Toggle filter · {state}{hint}', command=self.toggle_filter_enabled)
         menu.add_command(label='Filter darker', command=lambda: self.step_filter(-1))
         menu.add_command(label='Filter brighter', command=lambda: self.step_filter(+1))
@@ -1861,7 +1883,8 @@ class HUD:
                     display = 'BYPASS'
                 self.text(end-5, y, display, size=8, color=MUTED if bypassed else FG, anchor='e')
         enter_hint = '   ·   NUM ENTER  FILTER' if self.dj_options.enter == 'filter_toggle' else ''
-        footer = 'NUM / OR *  SELECT DECK' + enter_hint
+        footer = ('NUM LOCK OFF FOR KEYPAD' if self.hotkeys.presses.num_lock
+                  else 'NUM / OR *  SELECT DECK' + enter_hint)
         self.text(13, 190 if small else 229, footer, size=8, color=MUTED)
         if not small:
             self.text(13, 251, 'EQ  8/9 HIGH   5/6 MID   2/3 LOW   ·   ALT FOR FINE', size=9, color=MUTED)
@@ -1879,10 +1902,13 @@ class HUD:
         self.round_rect(0, 0, width-1, height-1, 12 if self.cfg['view_mode'] == 'small' else 15,
                         fill=BG, outline=BORDER, width=1)
         status = self.current.get('online', False)
+        keypad_active = self.cfg['exclusive_shortcuts'] and not self.hotkeys.presses.num_lock
         if self.cfg['view_mode'] == 'small':
             # Minimal EQ + filter view: no volume meters, outputs, or footer labels.
             self.round_rect(12, 11, 18, 17, 3, fill=GREEN if status else RED, outline='')
             self.text(26, 14, 'EQ  /  FILTER', size=9, weight='bold')
+            if keypad_active:
+                self.text(width - 32, 14, 'NUMPAD MACROS', size=8, color=GREEN, anchor='e')
             self.draw_mode_button()
             self.canvas.create_line(11, 29, width-11, 29, fill=BORDER)
             eq = self.current if status else {}
@@ -1895,6 +1921,8 @@ class HUD:
 
         self.round_rect(17, 15, 23, 21, 3, fill=GREEN if status else RED, outline='')
         self.text(32, 18, 'VOICEMEETER  /  CORNER HUD', size=10, weight='bold')
+        if keypad_active:
+            self.text(width - 35, 18, 'NUMPAD MACROS', size=8, color=GREEN, anchor='e')
         self.draw_mode_button()
         self.divider(36)
         if not status:

@@ -22,28 +22,48 @@ SETTINGS = b'''<?xml version="1.0" encoding="UTF-8"?>
 '''
 
 
+def keypad_script(actions, key, *, alt=False):
+    _, first, second = dj_setup.keypad_alias_sequence(key)
+    bank = dj_setup.DJ_KEYPAD_DIGITS.index(first) + 1
+    prefix = dj_setup.DJ_KEYPAD_PREFIX
+    script = actions[('ALT+' if alt else '') + second]
+    head = f'var_equal {prefix} {bank} ? set {prefix} 0 & ('
+    tail = f') : var_equal {prefix} {bank + 1} ?' if bank < 4 else f') : set {prefix} '
+    return script.split(head, 1)[1].split(tail, 1)[0]
+
+
 class MapperTests(unittest.TestCase):
     def test_verified_bindings_and_independent_frequency_eq(self):
         options = dj_setup.DjOptions(eq_step=4, filter_step=3, volume_step=2)
         mapper = ET.fromstring(dj_setup.build_mapper(options))
         actions = {n.get("value"): n.get("action") for n in mapper.findall("map")}
-        self.assertIn("deck 1 eq_high_freq -4%", actions["ALT+NUM8"])
-        self.assertIn("deck 2 eq_high_freq -4%", actions["ALT+NUM8"])
-        self.assertIn("deck 1 filter_activate", actions["F20"])
-        self.assertIn("deck 2 filter_activate", actions["F20"])
-        self.assertIn("deck 2 level 100% : deck 2 level 0%", actions["ALT+NUM+"])
-        self.assertIn("deck 1 level 100% : deck 1 level 0%", actions["NUM+"])
+        self.assertIn("deck 1 eq_high_freq -4%", keypad_script(actions, '8', alt=True))
+        self.assertIn("deck 2 eq_high_freq -4%", keypad_script(actions, '8', alt=True))
+        self.assertIn("deck 1 filter_activate", keypad_script(actions, 'enter'))
+        self.assertIn("deck 2 filter_activate", keypad_script(actions, 'enter'))
+        self.assertIn("deck 2 level 100% : deck 2 level 0%", keypad_script(actions, '+', alt=True))
+        self.assertIn("deck 1 level 100% : deck 1 level 0%", keypad_script(actions, '+'))
         self.assertIn("deck 2 sync : deck 1 sync", actions["ALT+Q"])
-        self.assertIn("deck 2 eq_high_freq -15%", actions["NUM8"])
-        self.assertIn("deck 2 filter +3%", actions["NUM."])
+        self.assertIn("deck 2 eq_high_freq -15%", keypad_script(actions, '8'))
+        self.assertIn("deck 2 filter +3%", keypad_script(actions, '.'))
         self.assertIn("deck 1 eq_reset", actions["ALT+8"])
         self.assertNotIn("RETURN", actions)
         self.assertFalse(any(key.startswith("CTRL+") for key in actions))
         self.assertNotIn("NUMENTER", actions)
-        self.assertIn("deck 1 filter 50%", actions["ALT+NUM."])
-        self.assertIn("deck 1 filter +3%", actions["ALT+NUM."])
-        self.assertIn("deck 2 level -2%", actions["ALT+NUM1"])
-        self.assertIn("isrepeat", actions["ALT+NUM/"])
+        self.assertIn("deck 1 filter 50%", keypad_script(actions, '.', alt=True))
+        self.assertIn("deck 1 filter +3%", keypad_script(actions, '.', alt=True))
+        self.assertIn("deck 2 level -2%", keypad_script(actions, '1', alt=True))
+
+    def test_keypad_aliases_keep_the_physical_numpad_native(self):
+        base = b'<mapper device="KEYBOARD"><map value="NUM8" action="play" /><map value="RETURN" action="browser_enter" /></mapper>'
+        actions = {node.get('value'): node.get('action') for node in ET.fromstring(dj_setup.build_mapper(base=base))}
+        self.assertTrue(all('NUM' not in key for key in actions))
+        self.assertEqual('browser_enter', actions['RETURN'])
+        self.assertEqual(16, len({dj_setup.keypad_alias_sequence(key) for key in dj_setup.DJ_KEYPAD_KEYS}))
+        self.assertEqual('nothing', keypad_script(actions, 'enter', alt=True))
+        for alias in (dj_setup.DJ_KEYPAD_START, *dj_setup.DJ_KEYPAD_DIGITS):
+            self.assertTrue(actions[alias].startswith(dj_setup.ONCE))
+            self.assertTrue(actions['ALT+' + alias].startswith(dj_setup.ONCE))
 
     def test_selected_deck_transport_keys_keep_user_overrides(self):
         base = (b'<mapper device="KEYBOARD"><map value="ALT+Q" action="cue" />'
@@ -72,8 +92,8 @@ class MapperTests(unittest.TestCase):
 
     def test_numpad_minus_centers_eq_and_filter_without_toggling_bypass_or_volume(self):
         actions = {n.get('value'): n.get('action') for n in ET.fromstring(dj_setup.build_mapper())}
-        script = actions['NUM-']
-        self.assertEqual(script, actions['ALT+NUM-'])
+        script = keypad_script(actions, '-')
+        self.assertEqual(script, keypad_script(actions, '-', alt=True))
         for deck in (1, 2):
             self.assertIn(f'deck {deck} eq_reset & (set', script)
             self.assertIn(f"set '$cornerhud_filter_position_{deck}' 0.5", script)
@@ -83,22 +103,22 @@ class MapperTests(unittest.TestCase):
 
     def test_native_filter_targets_starter_control_and_regular_mixer(self):
         actions = {n.get('value'): n.get('action') for n in ET.fromstring(dj_setup.build_mapper())}
-        self.assertIn("load_skin 'Default:Starter' ?", actions['NUM.'])
-        self.assertIn("deck 2 effect_colorfx 1 'Filter' +5%", actions['NUM.'])
-        self.assertIn("deck 1 filter +5%", actions['NUM.'])
-        self.assertIn("deck 2 effect_colorfx 1 'Filter' 50%", actions['NUM-'])
-        self.assertIn("deck 1 effect_colorfx 1 'Filter' 50%", actions['F20'])
-        self.assertIn("deck 1 filter_activate", actions['F20'])
-        self.assertIn("deck 2 level -15%", actions['NUM1'])
-        self.assertIn("deck 1 level +15%", actions['ALT+NUM4'])
+        self.assertIn("load_skin 'Default:Starter' ?", keypad_script(actions, '.'))
+        self.assertIn("deck 2 effect_colorfx 1 'Filter' +5%", keypad_script(actions, '.'))
+        self.assertIn("deck 1 filter +5%", keypad_script(actions, '.'))
+        self.assertIn("deck 2 effect_colorfx 1 'Filter' 50%", keypad_script(actions, '-'))
+        self.assertIn("deck 1 effect_colorfx 1 'Filter' 50%", keypad_script(actions, 'enter'))
+        self.assertIn("deck 1 filter_activate", keypad_script(actions, 'enter'))
+        self.assertIn("deck 2 level -15%", keypad_script(actions, '1'))
+        self.assertIn("deck 1 level +15%", keypad_script(actions, '4', alt=True))
 
     def test_volume_toggle_queries_each_decks_current_level(self):
         actions = {n.get('value'): n.get('action') for n in ET.fromstring(dj_setup.build_mapper())}
-        self.assertEqual(actions['NUM+'], actions['ALT+NUM+'])
-        self.assertIn('isrepeat ? nothing', actions['NUM+'])
+        script = keypad_script(actions, '+')
+        self.assertEqual(script, keypad_script(actions, '+', alt=True))
         for deck in (1, 2):
             self.assertIn(f'param_equal `deck {deck} level` 0% ? '
-                          f'deck {deck} level 100% : deck {deck} level 0%', actions['NUM+'])
+                          f'deck {deck} level 100% : deck {deck} level 0%', script)
 
     def test_default_eq_steps_and_bass_swap_mapping(self):
         opts = dj_setup.DjOptions.from_config({})
@@ -107,8 +127,8 @@ class MapperTests(unittest.TestCase):
         custom = dj_setup.DjOptions.from_config({'dj_eq_step': 4, 'dj_eq_coarse_step': 12})
         self.assertEqual((4, 12), (custom.eq_step, custom.eq_coarse_step))
         actions = {n.get('value'): n.get('action') for n in ET.fromstring(dj_setup.build_mapper(opts))}
-        self.assertIn('deck 1 eq_low_freq +8%', actions['ALT+NUM3'])
-        self.assertIn('deck 2 eq_low_freq +15%', actions['NUM3'])
+        self.assertIn('deck 1 eq_low_freq +8%', keypad_script(actions, '3', alt=True))
+        self.assertIn('deck 2 eq_low_freq +15%', keypad_script(actions, '3'))
         boost_1 = "deck 2 eq_low_freq 0% & deck 1 eq_low_freq 60%"
         boost_2 = "deck 1 eq_low_freq 0% & deck 2 eq_low_freq 60%"
         self.assertEqual(dj_setup.ONCE

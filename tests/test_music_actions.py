@@ -44,6 +44,18 @@ class MusicActionsTests(unittest.TestCase):
         reader.apply_action(vm, 'high_down')
         self.assertEqual((1.92, 12, -12), (music.bass, music.mid, music.treble))
 
+    def test_output_commands_switch_only_the_first_two_bus_mutes(self):
+        reader = VoiceReader({'music_strip': 0}, None, None, None)
+        a1 = SimpleNamespace(mute=False, gain=-3)
+        a2 = SimpleNamespace(mute=True, gain=-8)
+        a3 = SimpleNamespace(mute=False, gain=-2)
+        vm = SimpleNamespace(strip=[object()], bus=[a1, a2, a3])
+        reader.apply_action(vm, 'headphones')
+        self.assertEqual((True, False, False), (a1.mute, a2.mute, a3.mute))
+        reader.apply_action(vm, 'speakers')
+        self.assertEqual((False, True, False), (a1.mute, a2.mute, a3.mute))
+        self.assertEqual((-3, -8, -2), (a1.gain, a2.gain, a3.gain))
+
     def test_ctrl_keypad_enter_is_assignable_and_dispatches_to_filter(self):
         self.assertEqual('filter_toggle', DEFAULTS['key_actions']['enter'])
         self.assertIn('filter_toggle', ACTIONS)

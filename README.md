@@ -19,7 +19,7 @@ Right-click the HUD, or choose **Settings…** from its system tray icon.
 
 1. Launch VirtualDJ and right-click the HUD. Choose **Mode → DJ / VirtualDJ (2 decks)**.
 2. When the mapper first needs installation or an update, the HUD can restart VirtualDJ to apply it. It waits for a clean exit, backs up affected files, installs `KEYBOARD - Corner HUD DJ.xml`, and selects the mapper for the next launch.
-3. Keep VirtualDJ focused and Num Lock on for DJ commands. DJ Mode reserves the entire numpad, even if focus moves to another app. Closing VirtualDJ or choosing **Music / Spotify** restores the Music profile. By default, the HUD backs up the active MacroButtons map, closes MacroButtons when entering DJ Mode, and starts it again when leaving. If its active map is blank or missing, the HUD restores that session’s backup before reopening it. The **Pause MacroButtons in DJ Mode** menu setting controls that behavior for the next entry.
+3. Keep VirtualDJ focused and turn Num Lock off for the DJ keypad. Num Lock on gives you the normal keypad. Closing VirtualDJ or choosing **Music / Spotify** restores the Music profile. By default, the HUD backs up the active MacroButtons map, closes MacroButtons when entering DJ Mode, and starts it again when leaving. If its active map is blank or missing, the HUD restores that session’s backup before reopening it. The **Pause MacroButtons in DJ Mode** menu setting controls that behavior for the next entry.
 4. **Enter DJ Mode when VirtualDJ has focus** is optional. It uses an already installed mapper. Selecting Music manually overrides automatic entry until the VirtualDJ session ends.
 
 The keybind guide opens next to the corner HUD when you enter DJ Mode with VirtualDJ focused. Use **×** to dismiss it for the session. To bring it back, choose **VirtualDJ → Show keybinds…** and return focus to VirtualDJ.
@@ -64,9 +64,9 @@ Existing licensed Network Control installations can opt into readback with `dj_h
 
 ## Music Mode
 
-Exclusive Ctrl+numpad capture is enabled by default. The HUD pairs key-down and key-up by keypad identity, including key codes emitted with Num Lock off. Configure the map at **Music → Shortcuts…**. Legacy iCUE profiles can also assign a specific Music action to Ctrl+Home. The same chord on a standard keyboard has the same action. Unassigned Ctrl+numpad keys are reserved while exclusive capture is on. Plain keypad keys pass through. Ctrl itself remains an ordinary modifier. Use modifier-free iCUE assignments if Ctrl alone triggers a game command.
+Turn Num Lock off to run Music macros with bare keypad keys. The HUD consumes assigned keypad presses so they don’t also act as navigation in a game or another app. Turn Num Lock on for ordinary keypad typing. Configure the map at **Music → Shortcuts…**. Saved iCUE chords such as Ctrl+Home and Ctrl+numpad remain available.
 
-| Ctrl + Numpad | Default Music action |
+| Numpad, Num Lock off | Default Music action |
 | --- | --- |
 | `8` / `9` | HIGH EQ down / up 1.92 dB |
 | `5` / `6` | MID EQ down / up 1.92 dB |
@@ -80,9 +80,11 @@ Exclusive Ctrl+numpad capture is enabled by default. The HUD pairs key-down and 
 
 Each Music EQ step is 8% of the full −12 to +12 dB range.
 
+With the macro layer active, **F5** switches to A1 speakers and **F6** switches to A2 headphones. These shortcuts switch the output mutes and keep both bus gains.
+
 ### ELKA and Kilohearts
 
-`Installed Kilohearts` lists local VST3 bundles. **Music → ELKA connection → Auto-register from ELKA saves…** reads stable IDs from the active ELKA layout. Only register effects on the Spotify AUX chain. `Import IDs from saved ELKA layout` also accepts an explicit export. Once kHs Filter is paired, the HUD reads its cutoff and Type choices using ELKA’s isolated plugin loader, including the high-pass setting. Existing manually configured values are retained. Ctrl+Numpad Enter toggles Music filter bypass. At the center position the dial passes dry audio. Bypass dims the current cutoff without losing its position.
+`Installed Kilohearts` lists local VST3 bundles. **Music → ELKA connection → Auto-register from ELKA saves…** reads stable IDs from the active ELKA layout. Only register effects on the Spotify AUX chain. `Import IDs from saved ELKA layout` also accepts an explicit export. Once kHs Filter is paired, the HUD reads its cutoff and Type choices using ELKA’s isolated plugin loader, including the high-pass setting. Existing manually configured values are retained. Numpad Enter toggles Music filter bypass with Num Lock off. At the center position the dial passes dry audio. Bypass dims the current cutoff without losing its position.
 
 ELKA 0.8.3.0 keeps the active graph under `%APPDATA%\ElkaSoft\VoiceMeeterFxHost\wpf-main-window.json`. ELKA restores nodes and cables from that file at startup. The HUD’s current setup reads that graph and uses VBAN to control loaded effects. New nodes still need to be installed in the graph. The [implementation log](IMPLEMENTATION_LOG.md) records the source-verified persistence mechanism and the remaining graph-automation work.
 

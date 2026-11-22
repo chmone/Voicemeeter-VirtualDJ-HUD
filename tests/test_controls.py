@@ -1,11 +1,13 @@
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
 from dj_setup import DjOptions
 from dj_state import DeckEstimates
-from keyboard_controls import ShortcutPresses, identify_key
+from keyboard_controls import ShortcutPresses, _dj_keypad_inputs, identify_key
 import macrobuttons
 from kilohearts import cutoff_value, filter_controls
 from overlay import HUD, MUTED
@@ -31,14 +33,14 @@ class KeyboardTests(unittest.TestCase):
         self.assertEqual(('main', 'enter'), identify_key(0x0d, 0x1c, 0))
 
     def test_down_up_pair_survives_ctrl_release_and_mode_change(self):
-        presses = ShortcutPresses()
+        presses = ShortcutPresses(num_lock=False)
         key = ('keypad', '8')
         self.assertEqual((True, 'key_action:high_down'), self.event(presses, key))
         self.assertEqual((True, None), self.event(presses, key, mode='dj'))
         self.assertEqual((True, None), self.event(presses, key, down=False, ctrl=False, mode='dj'))
-        self.assertEqual((False, ('dj_key', 'high_down', False)),
+        self.assertEqual((True, ('dj_keypad', '8', 'high_down', False)),
                          self.event(presses, key, mode='dj', ctrl=False, alt=True))
-        self.assertEqual((False, None), self.event(presses, key, down=False))
+        self.assertEqual((True, None), self.event(presses, key, down=False))
         self.assertEqual((False, None), self.event(presses, key, exclusive=False))
 
     def test_unrelated_ctrl_chord_and_modifier_free_g_key(self):
@@ -65,7 +67,7 @@ class KeyboardTests(unittest.TestCase):
             ShortcutPresses(), home, mode='dj', home_action='music_fade_up'))
 
     def test_music_does_not_leak_active_native_mapper_bindings(self):
-        key = ('keypad', '8')
+        key = ('row', '8')
         presses = ShortcutPresses()
         self.assertEqual((True, None), self.event(
             presses, key, mode='music_vdj', ctrl=False, alt=True, exclusive=False))
@@ -79,7 +81,7 @@ class KeyboardTests(unittest.TestCase):
 
     def test_ctrl_keypad_enter_toggles_filter_only_in_music(self):
         key = ('keypad', 'enter')
-        presses = ShortcutPresses()
+        presses = ShortcutPresses(num_lock=False)
         music_actions = {'enter': 'filter_toggle'}
         self.assertEqual((True, 'key_action:filter_toggle'),
                          self.event(presses, key, music_actions=music_actions))
@@ -107,40 +109,35 @@ class KeyboardTests(unittest.TestCase):
 
     def test_bare_numpad_enter_forwards_only_once_in_focused_dj_mode(self):
         key = identify_key(0x0d, 0x1c, 1)
-        presses = ShortcutPresses()
-        self.assertEqual((True, ('dj_enter', 'filter_toggle')),
+        presses = ShortcutPresses(num_lock=False)
+        self.assertEqual((True, ('dj_keypad', 'enter', 'filter_toggle', True)),
                          self.event(presses, key, ctrl=False, mode='dj'))
         self.assertEqual((True, None), self.event(presses, key, ctrl=False, mode='dj'))
         self.assertEqual((True, None),
                          self.event(presses, key, ctrl=False, mode='music', down=False))
         self.assertEqual((True, None), self.event(presses, key, ctrl=False, mode='dj_background'))
         self.assertEqual((True, None), self.event(
-            ShortcutPresses(), key, ctrl=False, alt=True, mode='dj'))
+            ShortcutPresses(num_lock=False), key, ctrl=False, alt=True, mode='dj'))
 
-    def test_dj_owns_bare_keypad_and_reserves_it_when_unfocused(self):
+    def test_dj_owns_keypad_with_num_lock_off_and_passes_it_with_num_lock_on(self):
         key = ('keypad', '8')
-        self.assertEqual((False, ('dj_key', 'high_down', True)),
-                         self.event(ShortcutPresses(), key, mode='dj', ctrl=False))
-        self.assertEqual((False, ('dj_key', 'high_down', False)), self.event(
-            ShortcutPresses(), key, mode='dj', ctrl=False, alt=True))
-        self.assertEqual((True, None), self.event(ShortcutPresses(), key, mode='dj'))
-        for ctrl in (False, True):
-            self.assertEqual((True, None), self.event(
-                ShortcutPresses(), key, mode='dj_background', ctrl=ctrl))
+        for alt in (False, True):
+            self.assertEqual((True, ('dj_keypad', '8', 'high_down', not alt)), self.event(
+                ShortcutPresses(num_lock=False), key, mode='dj', ctrl=False, alt=alt))
+            for mode in ('dj', 'dj_background', 'dj_waiting'):
+                self.assertEqual((False, None), self.event(
+                    ShortcutPresses(num_lock=True), key, mode=mode, ctrl=False, alt=alt))
         self.assertEqual((True, None), self.event(
-            ShortcutPresses(), key, mode='dj', ctrl=False, dj_keypad_available=False))
-        self.assertEqual((True, ('dj_enter', 'filter_toggle')), self.event(
-            ShortcutPresses(), ('keypad', 'enter'), mode='dj', ctrl=False))
-        self.assertEqual((False, None), self.event(ShortcutPresses(), key, ctrl=False))
+            ShortcutPresses(num_lock=False), key, mode='dj_background', ctrl=False))
 
     def test_holding_keypad_key_does_not_repeat_into_another_app(self):
         key = ('keypad', '8')
-        presses = ShortcutPresses()
-        self.assertEqual((False, ('dj_key', 'high_down', True)),
+        presses = ShortcutPresses(num_lock=False)
+        self.assertEqual((True, ('dj_keypad', '8', 'high_down', True)),
                          self.event(presses, key, mode='dj', ctrl=False))
         self.assertEqual((True, None),
                          self.event(presses, key, mode='dj_background', ctrl=False))
-        self.assertEqual((False, None),
+        self.assertEqual((True, None),
                          self.event(presses, key, mode='dj_background', ctrl=False, down=False))
 
     def test_alt_top_row_eight_resets_both_decks_in_dj_mode(self):
@@ -165,8 +162,8 @@ class KeyboardTests(unittest.TestCase):
         self.assertEqual((False, None), self.event(ShortcutPresses(), key))
         self.assertEqual((True, None),
                          self.event(ShortcutPresses(), key, mode='music_vdj', ctrl=False, alt=True))
-        self.assertEqual((False, ('dj_key', 'eq_reset', False)), self.event(
-            ShortcutPresses(), ('keypad', '7'), mode='dj', ctrl=False, alt=True))
+        self.assertEqual((True, ('dj_keypad', '7', 'eq_reset', False)), self.event(
+            ShortcutPresses(num_lock=False), ('keypad', '7'), mode='dj', ctrl=False, alt=True))
 
     def test_alt_w_is_forwarded_and_tracked_once_in_focused_dj_mode(self):
         key = identify_key(0x57, 0x11, 0x20)
@@ -181,12 +178,54 @@ class KeyboardTests(unittest.TestCase):
                          self.event(ShortcutPresses(), key, mode='music', ctrl=False, alt=True))
 
     def test_macrobuttons_transition_blocks_dj_commands_until_ready(self):
-        presses = ShortcutPresses()
+        presses = ShortcutPresses(num_lock=False)
         key = ('keypad', '*')
         self.assertEqual((True, None), self.event(presses, key, mode='dj_waiting'))
         self.assertEqual((True, None), self.event(presses, key, down=False, mode='dj'))
-        self.assertEqual((False, ('dj_key', 'deck2', False)),
+        self.assertEqual((True, ('dj_keypad', '*', 'deck2', False)),
                          self.event(presses, key, mode='dj', ctrl=False, alt=True))
+
+    def test_music_num_lock_layer_keeps_a_pressed_macro_paired(self):
+        presses = ShortcutPresses()
+        key = identify_key(0x26, 0x48, 0)
+        self.assertEqual((False, None), self.event(presses, key, ctrl=False))
+        self.assertEqual((False, None), self.event(presses, key, ctrl=False, down=False))
+        presses.num_lock_event(True)
+        presses.num_lock_event(True)
+        self.assertEqual((True, 'key_action:high_down'), self.event(presses, key, ctrl=False))
+        presses.num_lock_event(False)
+        presses.num_lock_event(True)
+        self.assertEqual((True, None), self.event(presses, key, ctrl=False))
+        self.assertEqual((True, None), self.event(presses, key, ctrl=False, down=False))
+        self.assertEqual((False, None), self.event(presses, key, ctrl=False))
+
+    def test_music_can_bind_bare_keypad_and_legacy_g_key_to_different_actions(self):
+        args = dict(music_actions={'4': 'music_fade_up'}, music_ctrl_actions={'4': 'music_mute'})
+        key = ('keypad', '4')
+        self.assertEqual((True, 'key_action:music_fade_up'), self.event(
+            ShortcutPresses(num_lock=False), key, ctrl=False, **args))
+        self.assertEqual((True, 'key_action:music_mute'), self.event(
+            ShortcutPresses(), key, **args))
+        self.assertEqual((False, None), self.event(
+            ShortcutPresses(num_lock=False), ('keypad', '+'), ctrl=False, **args))
+
+    def test_music_output_buttons_use_the_num_lock_off_layer(self):
+        for vk, action in ((0x74, 'speakers'), (0x75, 'headphones')):
+            key = identify_key(vk, 0, 0)
+            self.assertEqual((True, 'key_action:' + action), self.event(
+                ShortcutPresses(num_lock=False), key, ctrl=False))
+            self.assertEqual((False, None), self.event(ShortcutPresses(), key, ctrl=False))
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows INPUT layout')
+    def test_different_keypad_sequences_share_the_sendinput_structure(self):
+        api, first, size = _dj_keypad_inputs('1')
+        same_api, second, second_size = _dj_keypad_inputs('4')
+        self.assertIs(api, same_api)
+        self.assertIs(type(first), type(second))
+        self.assertEqual(size, second_size)
+        self.assertEqual([0, 2, 0, 2, 0, 2], [event.data.keyboard.flags for event in first])
+        self.assertNotEqual([event.data.keyboard.vk for event in first],
+                            [event.data.keyboard.vk for event in second])
 
 
 class EstimateTests(unittest.TestCase):
@@ -304,6 +343,7 @@ class EstimateTests(unittest.TestCase):
         hud.dj_estimates.values[2, 'level'] = 85
         hud.dj_connected = False
         hud.dj_focused = True
+        hud.hotkeys = SimpleNamespace(presses=ShortcutPresses(num_lock=False))
         hud.canvas = Mock()
         hud.round_rect = Mock()
         hud.text = Mock()

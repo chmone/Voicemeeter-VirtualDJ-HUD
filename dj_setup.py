@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 
 MAPPER_NAME = 'KEYBOARD - Corner HUD DJ'
-MAPPER_REVISION = 12
+MAPPER_REVISION = 13
 DEFAULT_EQ_STEP = 8
 DEFAULT_EQ_COARSE_STEP = 15
 DEFAULT_VOLUME_STEP = 15
@@ -37,7 +37,9 @@ DJ_ACTIONS = {
     'bass_swap': 'Swap bass between decks',
 }
 DEFAULT_ENTER_ACTION = 'filter_toggle'
-DJ_KEYPAD_ENTER_ALIAS = 'F20'
+DJ_KEYPAD_START = 'F20'
+DJ_KEYPAD_DIGITS = ('F21', 'F22', 'F23', 'F24')
+DJ_KEYPAD_PREFIX = "'$cornerhud_keypad_prefix'"
 BASS_SWAP_BINDING = 'ALT+7'
 RESET_BOTH_BINDING = 'ALT+8'
 EQ_MINIMUM_BINDING = 'ALT+W'
@@ -52,6 +54,7 @@ NUMPAD_ACTIONS = {
     '0': 'filter_down', '.': 'filter_up', '1': 'volume_down', '4': 'volume_up',
     '7': 'eq_reset', '-': 'deck_center', '+': 'volume_toggle',
 }
+DJ_KEYPAD_KEYS = (*NUMPAD_ACTIONS, 'enter')
 TRANSPORT_KEYS = (
     ('Play / pause', 'play_button', '1'),
     ('Cue', 'cue_button', '2'),
@@ -96,14 +99,16 @@ class DjOptions:
         )
 
     def bindings(self):
-        keys = {f'{modifier}NUM{key}': value for key, value in NUMPAD_ACTIONS.items()
-                for modifier in ('', 'ALT+')}
-        keys[DJ_KEYPAD_ENTER_ALIAS] = self.enter
-        keys.update({f'F{number}': action for number, action in enumerate(self.g_keys, 13)
-                     if action != 'none'})
+        keys = {f'F{number}': action for number, action in enumerate(self.g_keys, 13)
+                if action != 'none'}
         keys.update(DJ_ALT_DECK_KEYS)
         keys['F19'] = 'reset_all'
         return keys
+
+
+def keypad_alias_sequence(key):
+    first, second = divmod(DJ_KEYPAD_KEYS.index(key), len(DJ_KEYPAD_DIGITS))
+    return DJ_KEYPAD_START, DJ_KEYPAD_DIGITS[first], DJ_KEYPAD_DIGITS[second]
 
 
 def filter_position(current: float, delta: int) -> float:
@@ -210,6 +215,23 @@ def action_script(action: str, options: DjOptions, *, coarse=False) -> str:
     return f'{prefix}var_equal {VARIABLE} 2 ? {right} : {left}'
 
 
+def keypad_alias_scripts(options):
+    # A start key resets the decoder. The next two function keys identify one
+    # keypad key without assigning any physical digit or navigation key in VirtualDJ.
+    clear = f'set {DJ_KEYPAD_PREFIX} 0'
+    count = len(DJ_KEYPAD_DIGITS)
+    for modifier in ('', 'ALT+'):
+        yield modifier + DJ_KEYPAD_START, ONCE + clear
+        for second, alias in enumerate(DJ_KEYPAD_DIGITS):
+            script = f'set {DJ_KEYPAD_PREFIX} {second + 1}'
+            for first in reversed(range(count)):
+                key = DJ_KEYPAD_KEYS[first * count + second]
+                action = NUMPAD_ACTIONS.get(key, options.enter if not modifier else 'none')
+                command = action_script(action, options, coarse=not modifier).removeprefix(ONCE)
+                script = f'var_equal {DJ_KEYPAD_PREFIX} {first + 1} ? {clear} & ({command}) : {script}'
+            yield modifier + alias, ONCE + script
+
+
 def build_mapper(options=None, base=None) -> bytes:
     options = options or DjOptions()
     root = ET.Element('mapper', {'device': 'KEYBOARD', 'author': 'Corner HUD', 'version': '850'})
@@ -218,8 +240,12 @@ def build_mapper(options=None, base=None) -> bytes:
         if root.tag != 'mapper' or root.get('device', '').upper() != 'KEYBOARD':
             raise ValueError('The selected base mapping is not a VirtualDJ keyboard mapper.')
     bindings = options.bindings()
+    aliases = dict(keypad_alias_scripts(options))
+    reserved = bindings.keys() | aliases.keys() | {
+        f'{modifier}NUM{key}' for modifier in ('', 'ALT+', 'CTRL+') for key in NUMPAD_ACTIONS
+    }
     for node in root.findall('map'):
-        if node.get('value', '').upper() in bindings:
+        if node.get('value', '').upper() in reserved:
             root.remove(node)
     startup = next((node for node in root.findall('map') if node.get('value') == 'ONINIT'), None)
     if startup is None:
@@ -229,7 +255,8 @@ def build_mapper(options=None, base=None) -> bytes:
     existing = startup.get('action', '')
     startup.set('action', f'({existing}) & {initial}' if existing else initial)
     for key, action in bindings.items():
-        script = action_script(action, options, coarse=key.startswith('NUM'))
+        ET.SubElement(root, 'map', {'value': key, 'action': action_script(action, options)})
+    for key, script in aliases.items():
         ET.SubElement(root, 'map', {'value': key, 'action': script})
     assigned = {node.get('value', '').upper() for node in root.findall('map')}
     for _label, action, key in TRANSPORT_KEYS:

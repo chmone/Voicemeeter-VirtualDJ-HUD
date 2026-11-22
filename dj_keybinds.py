@@ -78,7 +78,7 @@ class DjKeybindGuide:
         keypad.pack(side='left', fill='both', padx=(0, 6))
         regular = tk.Frame(tables, bg=self.panel, padx=7, pady=5)
         regular.pack(side='left', fill='both', expand=True)
-        label(keypad, 'Numpad · Num Lock on', bg=self.panel, fg=self.accent, bold=True).grid(
+        label(keypad, 'Numpad · Num Lock off', bg=self.panel, fg=self.accent, bold=True).grid(
             row=0, column=0, columnspan=2, sticky='w', pady=(0, 4))
         for row, (key, action) in enumerate(keypad_rows(options), 1):
             label(keypad, key, bg=self.panel, bold=True).grid(row=row, column=0, sticky='w', padx=(0, 7))
