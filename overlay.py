@@ -28,7 +28,7 @@ from screeninfo import get_monitors
 import pystray
 
 from dj_keybinds import DjKeybindGuide
-from dj_setup import BASS_SWAP_BINDING, RESET_BOTH_BINDING, DjOptions
+from dj_setup import BASS_SWAP_BINDING, EQ_MINIMUM_BINDING, RESET_BOTH_BINDING, DjOptions
 from dj_state import DeckEstimates
 from keyboard_controls import (
     NAVIGATION, ShortcutPresses, foreground_is_virtualdj, identify_key, process_executable,
@@ -1382,7 +1382,7 @@ class HUD:
         body = ttk.Frame(popup, padding=12)
         body.pack(fill='both', expand=True)
 
-        increments = ttk.LabelFrame(body, text='Step size (%)', padding=8)
+        increments = ttk.LabelFrame(body, text='Step size (% of knob or fader travel)', padding=8)
         increments.pack(fill='x', pady=(0, 8))
         step_values = {}
         for index, (label, key, current) in enumerate((
@@ -1408,6 +1408,7 @@ class HUD:
             advanced, dict(zip(f_keys, self.dj_options.g_keys)), DJ_ACTIONS)
         action_ids = {label: action for action, label in DJ_ACTIONS.items()}
         ttk.Label(body, text=('Numpad Plus toggles deck volume zero / full.\n'
+                             f'{EQ_MINIMUM_BINDING.title()} sets the selected deck EQ to minimum.\n'
                              f'{BASS_SWAP_BINDING.title()} swaps bass between decks.\n'
                              f'{RESET_BOTH_BINDING.title()} resets both decks.'),
                   justify='left').pack(anchor='w', pady=(0, 8))
@@ -1854,6 +1855,8 @@ class HUD:
                     display = f'{value:g}%'
                     if attribute == 'filter':
                         display = 'CENTER' if value == 50 else f'{"LP" if value < 50 else "HP"} {value:g}%'
+                    elif attribute.startswith('eq_'):
+                        display = f'{2 * value:g}%'
                 if bypassed and value is None:
                     display = 'BYPASS'
                 self.text(end-5, y, display, size=8, color=MUTED if bypassed else FG, anchor='e')

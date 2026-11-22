@@ -39,7 +39,7 @@ The installer detects the current VirtualDJ data directory, including the regist
 | `+` | Set selected deck volume to zero, or to full if it is already zero |
 | `Enter` (bare) | Toggle the selected deck’s filter by default, configurable |
 
-Use the keys bare or with Alt. The filter toggle uses bare Numpad Enter. Bare EQ steps are 15% by default. Hold Alt for an 8% step. **VirtualDJ → Shortcuts and step sizes…** lets you change both EQ steps, filter and volume steps, and the Numpad Enter assignment. Main Enter remains available to VirtualDJ.
+Use the keys bare or with Alt. The filter toggle uses bare Numpad Enter. Bare EQ steps cover 15% of the knob’s travel by default. Hold Alt for an 8% step. **VirtualDJ → Shortcuts and step sizes…** lets you change both EQ steps, filter and volume steps, and the Numpad Enter assignment. Main Enter remains available to VirtualDJ.
 
 Both deck filters start bypassed. Numpad `0` and `.` adjust the selected deck’s filter in either state. Bipolar steps land on 50% when they reach or cross neutral. Numpad Minus centers the position. The HUD shows the adjustable position in gray while bypassed. Numpad Enter applies the saved position when enabling the filter. In VirtualDJ’s Starter layout the visible Filter dial stays centered during bypass.
 
@@ -52,12 +52,13 @@ Both deck filters start bypassed. Numpad `0` and `.` adjust the selected deck’
 | Halve loop size | Alt+5 |
 | Double loop size | Alt+6 |
 | Sync | Alt+Q |
+| Set HIGH, MID, and LOW to minimum | Alt+W |
 
-Select the transport deck with Numpad `/` or `*`. A conflicting binding in the previous custom mapper takes precedence for transport. **Alt+7** cuts the deck with the higher LOW EQ to 0% and boosts the other deck to 60%. If their LOW EQ is tied, the selected deck gets the boost. **Alt+8** resets both decks. F13–F18 are optional virtual keys for profiles that explicitly emit them.
+Select the transport deck with Numpad `/` or `*`. A conflicting binding in the previous custom mapper takes precedence for transport. **Alt+7** cuts the deck with the higher LOW EQ to 0% and boosts the other deck to 120% on the HUD’s EQ scale. If their LOW EQ is tied, the selected deck gets the boost. **Alt+8** resets both decks. F13–F18 are optional virtual keys for profiles that explicitly emit them.
 
 ### Deck values
 
-Keyboard control uses VirtualDJ's native mapper and works without Network Control. The HUD labels command-tracked values **Keyboard Estimates** and starts from centered, bypassed filters, full volume faders, and Deck 1. Alt+8 resets both decks’ EQ, centers and bypasses the filters, returns their volume faders to 100%, and selects Deck 1. The selected deck's EQ reset and filter-center commands also establish estimates for those controls independently. Mouse movements, other controllers, and automatic changes within VirtualDJ can make estimates drift.
+Keyboard control uses VirtualDJ's native mapper and works without Network Control. The HUD labels command-tracked values **Keyboard Estimates** and starts from neutral EQ, centered bypassed filters, full volume faders, and Deck 1. EQ reads 100% at neutral, with cuts below 100% and boosts above it. Alt+8 resets both decks’ EQ, centers and bypasses the filters, returns their volume faders to 100%, and selects Deck 1. The selected deck's EQ reset and filter-center commands also establish estimates for those controls independently. Mouse movements, other controllers, and automatic changes within VirtualDJ can make estimates drift.
 
 Existing licensed Network Control installations can opt into readback with `dj_http_readback` and the loopback `dj_http_base` in HUD settings. The [VirtualDJ Network Control documentation](https://www.virtualdj.com/wiki/NetworkControlPlugin.html) requires Pro for that extension.
 

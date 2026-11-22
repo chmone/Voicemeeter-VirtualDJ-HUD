@@ -168,6 +168,18 @@ class KeyboardTests(unittest.TestCase):
         self.assertEqual((False, ('dj_key', 'eq_reset', False)), self.event(
             ShortcutPresses(), ('keypad', '7'), mode='dj', ctrl=False, alt=True))
 
+    def test_alt_w_is_forwarded_and_tracked_once_in_focused_dj_mode(self):
+        key = identify_key(0x57, 0x11, 0x20)
+        presses = ShortcutPresses()
+        self.assertEqual((False, ('dj_key', 'eq_minimum', False)),
+                         self.event(presses, key, mode='dj', ctrl=False, alt=True))
+        self.assertEqual((False, None), self.event(presses, key, mode='dj', ctrl=False, alt=True))
+        self.assertEqual((False, None),
+                         self.event(presses, key, mode='dj', down=False, ctrl=False))
+        self.assertEqual((False, None), self.event(presses, key, mode='dj', ctrl=False))
+        self.assertEqual((False, None),
+                         self.event(ShortcutPresses(), key, mode='music', ctrl=False, alt=True))
+
     def test_macrobuttons_transition_blocks_dj_commands_until_ready(self):
         presses = ShortcutPresses()
         key = ('keypad', '*')
@@ -196,12 +208,24 @@ class EstimateTests(unittest.TestCase):
     def test_bare_eq_is_faster_without_changing_other_decks(self):
         values = DeckEstimates()
         opts = DjOptions()
-        values.apply('reset_all', opts)
         values.apply('high_up', opts, coarse=True)
         values.apply('mid_down', opts)
         self.assertEqual(65, values.values[1, 'eq_high'])
         self.assertEqual(42, values.values[1, 'eq_mid'])
         self.assertEqual(50, values.values[2, 'eq_high'])
+
+    def test_eq_minimum_updates_all_three_bands_and_preserves_volume(self):
+        values = DeckEstimates()
+        opts = DjOptions()
+        values.apply('deck2', opts)
+        values.apply('volume_down', opts)
+        values.apply('eq_minimum', opts)
+        self.assertEqual((0, 0, 0, 85), tuple(
+            values.values[2, control] for control in ('eq_high', 'eq_mid', 'eq_low', 'level')))
+        self.assertEqual(50, values.values[1, 'eq_high'])
+        values.apply('eq_reset', opts)
+        self.assertEqual(50, values.values[2, 'eq_high'])
+        self.assertEqual(85, values.values[2, 'level'])
 
     def test_bass_swap_alternates_the_lower_deck_without_reselecting(self):
         values = DeckEstimates()
@@ -250,12 +274,16 @@ class EstimateTests(unittest.TestCase):
         self.assertEqual(65, values.values[1, 'filter'])
         self.assertEqual(50, values.values[2, 'filter'])
 
-    def test_both_hud_sizes_render_the_first_filter_step_and_dim_bypass(self):
+    def test_both_hud_sizes_render_eq_around_100_and_dim_bypassed_filter(self):
         hud = HUD.__new__(HUD)
         hud.cfg = {'dj_mode': True, 'dj_http_readback': False}
         hud.dj_options = DjOptions()
         hud.dj_estimates = DeckEstimates()
         hud.dj_estimates.apply('filter_up', hud.dj_options)
+        hud.dj_estimates.apply('high_up', hud.dj_options, coarse=True)
+        hud.dj_estimates.apply('mid_down', hud.dj_options)
+        hud.dj_estimates.apply('volume_down', hud.dj_options)
+        hud.dj_estimates.values[2, 'level'] = 85
         hud.dj_connected = False
         hud.dj_focused = True
         hud.canvas = Mock()
@@ -266,13 +294,13 @@ class EstimateTests(unittest.TestCase):
             with self.subTest(mode=mode, connected=connected):
                 hud.cfg['view_mode'] = mode
                 hud.dj_connected = connected
-                hud.dj_values = {(1, 'filter'): '50%', (2, 'filter'): '50%'}
+                hud.dj_values = {key: f'{value}%' for key, value in hud.dj_estimates.values.items()}
+                hud.dj_values[1, 'filter'] = '50%'
                 hud.text.reset_mock()
                 hud.draw_dj()
-                filter_labels = {call.args[2]: call.kwargs.get('color')
-                                 for call in hud.text.call_args_list}
-                self.assertEqual(MUTED, filter_labels['HP 55%'])
-                self.assertIn('CENTER', filter_labels)
+                labels = {call.args[2]: call.kwargs.get('color') for call in hud.text.call_args_list}
+                self.assertEqual(MUTED, labels['HP 55%'])
+                self.assertTrue({'CENTER', '130%', '84%', '100%', '85%'}.issubset(labels))
 
 
 class MacroButtonsTests(unittest.TestCase):

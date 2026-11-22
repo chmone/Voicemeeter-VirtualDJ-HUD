@@ -60,6 +60,16 @@ class MapperTests(unittest.TestCase):
             self.assertTrue(actions[shortcut].startswith(dj_setup.ONCE))
         self.assertTrue({'ALT+F11', 'ALT+F12', 'ALT+9', 'ALT+0'}.isdisjoint(actions))
 
+    def test_alt_w_sets_only_the_selected_decks_frequency_eq_to_minimum(self):
+        base = b'<mapper device="KEYBOARD"><map value="ALT+W" action="nudge" /></mapper>'
+        root = ET.fromstring(dj_setup.build_mapper(base=base))
+        actions = root.findall("./map[@value='ALT+W']")
+        self.assertEqual(1, len(actions))
+        self.assertEqual(dj_setup.ONCE + "var_equal '$cornerhud_deck' 2 ? "
+                         "deck 2 eq_high_freq 0% & deck 2 eq_mid_freq 0% & deck 2 eq_low_freq 0% : "
+                         "deck 1 eq_high_freq 0% & deck 1 eq_mid_freq 0% & deck 1 eq_low_freq 0%",
+                         actions[0].get('action'))
+
     def test_native_filter_targets_starter_control_and_regular_mixer(self):
         actions = {n.get('value'): n.get('action') for n in ET.fromstring(dj_setup.build_mapper())}
         self.assertIn("load_skin 'Default:Starter' ?", actions['NUM.'])

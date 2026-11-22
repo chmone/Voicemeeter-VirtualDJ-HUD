@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 
 MAPPER_NAME = 'KEYBOARD - Corner HUD DJ'
-MAPPER_REVISION = 10
+MAPPER_REVISION = 11
 DEFAULT_EQ_STEP = 8
 DEFAULT_EQ_COARSE_STEP = 15
 DEFAULT_VOLUME_STEP = 15
@@ -31,14 +31,20 @@ DJ_ACTIONS = {
     'filter_center': 'Center filter', 'filter_toggle': 'Toggle deck filter',
     'volume_down': 'Volume down', 'volume_up': 'Volume up',
     'volume_toggle': 'Toggle deck volume zero / full',
-    'eq_reset': 'Reset deck EQ', 'sync': 'Sync deck', 'reset_all': 'Reset both decks',
+    'eq_minimum': 'Set deck EQ to minimum', 'eq_reset': 'Reset deck EQ',
+    'sync': 'Sync deck', 'reset_all': 'Reset both decks',
     'bass_swap': 'Swap bass between decks',
 }
 DEFAULT_ENTER_ACTION = 'filter_toggle'
 DJ_KEYPAD_ENTER_ALIAS = 'F20'
 BASS_SWAP_BINDING = 'ALT+7'
 RESET_BOTH_BINDING = 'ALT+8'
-DJ_ALT_DECK_KEYS = {BASS_SWAP_BINDING: 'bass_swap', RESET_BOTH_BINDING: 'reset_all'}
+EQ_MINIMUM_BINDING = 'ALT+W'
+DJ_ALT_DECK_KEYS = {
+    BASS_SWAP_BINDING: 'bass_swap',
+    RESET_BOTH_BINDING: 'reset_all',
+    EQ_MINIMUM_BINDING: 'eq_minimum',
+}
 NUMPAD_ACTIONS = {
     '/': 'deck1', '*': 'deck2', '8': 'high_down', '9': 'high_up',
     '5': 'mid_down', '6': 'mid_up', '2': 'low_down', '3': 'low_up',
@@ -161,6 +167,8 @@ def deck_script(deck: int, action: str, options: DjOptions, *, coarse=False) -> 
              'volume': ('level', options.volume_step)}
     if action == 'eq_reset':
         return f'deck {deck} eq_reset'
+    if action == 'eq_minimum':
+        return ' & '.join(f'deck {deck} eq_{band}_freq 0%' for band in ('high', 'mid', 'low'))
     if action == 'volume_toggle':
         return f'param_equal `deck {deck} level` 0% ? deck {deck} level 100% : deck {deck} level 0%'
     if action == 'filter_center':

@@ -29,6 +29,8 @@ def identify_key(vk, scan, flags):
         return 'keypad', KEYPAD_SCANS[scan]
     if 0x30 <= vk <= 0x39:
         return 'row', chr(vk)
+    if 0x41 <= vk <= 0x5A and f'ALT+{chr(vk)}' in DJ_ALT_DECK_KEYS:
+        return 'letter', chr(vk)
     if 0x7A <= vk <= 0x82:
         return 'function', f'F{vk - 0x6F}'
     return None
@@ -40,7 +42,7 @@ def native_dj_action(key, alt, options):
         if name == 'enter':
             return options.enter if not alt else None
         return NUMPAD_ACTIONS.get(name)
-    if alt and kind == 'row':
+    if alt and kind in ('row', 'letter'):
         return DJ_ALT_DECK_KEYS.get(f'ALT+{name}')
     if not alt and kind == 'function':
         if name in ('F13', 'F14', 'F15', 'F16', 'F17', 'F18', 'F19'):

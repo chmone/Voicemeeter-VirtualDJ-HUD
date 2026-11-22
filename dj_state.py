@@ -7,6 +7,8 @@ class DeckEstimates:
         self.deck = 1
         self.values = {(deck, control): value for deck in (1, 2)
                        for control, value in (('filter', 50), ('level', 100))}
+        for deck in (1, 2):
+            self.set_eq(deck, 50)
         self.filter_enabled = {1: False, 2: False}
         self.sync_deck = None
 
@@ -17,14 +19,16 @@ class DeckEstimates:
             self.deck = 1
             self.sync_deck = None
             for deck in (1, 2):
-                self.reset_eq(deck)
+                self.set_eq(deck, 50)
                 self.values[deck, 'filter'] = 50
                 self.filter_enabled[deck] = False
                 self.values[deck, 'level'] = 100
         elif action == 'sync':
             self.sync_deck = self.deck
         elif action == 'eq_reset':
-            self.reset_eq(self.deck)
+            self.set_eq(self.deck, 50)
+        elif action == 'eq_minimum':
+            self.set_eq(self.deck, 0)
         elif action == 'bass_swap':
             low_1 = self.values.get((1, 'eq_low'), 50)
             low_2 = self.values.get((2, 'eq_low'), 50)
@@ -55,6 +59,6 @@ class DeckEstimates:
                 self.values[key] = (filter_position(current, delta) if name == 'filter'
                                     else min(100, max(0, current + delta)))
 
-    def reset_eq(self, deck):
+    def set_eq(self, deck, value):
         for name in ('eq_high', 'eq_mid', 'eq_low'):
-            self.values[deck, name] = 50
+            self.values[deck, name] = value
