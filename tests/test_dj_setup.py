@@ -70,6 +70,17 @@ class MapperTests(unittest.TestCase):
                          "deck 1 eq_high_freq 0% & deck 1 eq_mid_freq 0% & deck 1 eq_low_freq 0%",
                          actions[0].get('action'))
 
+    def test_numpad_minus_centers_eq_and_filter_without_toggling_bypass_or_volume(self):
+        actions = {n.get('value'): n.get('action') for n in ET.fromstring(dj_setup.build_mapper())}
+        script = actions['NUM-']
+        self.assertEqual(script, actions['ALT+NUM-'])
+        for deck in (1, 2):
+            self.assertIn(f'deck {deck} eq_reset & (set', script)
+            self.assertIn(f"set '$cornerhud_filter_position_{deck}' 0.5", script)
+            self.assertIn(f'deck {deck} filter 50%', script)
+        self.assertNotIn('filter_activate', script)
+        self.assertNotIn(' level ', script)
+
     def test_native_filter_targets_starter_control_and_regular_mixer(self):
         actions = {n.get('value'): n.get('action') for n in ET.fromstring(dj_setup.build_mapper())}
         self.assertIn("load_skin 'Default:Starter' ?", actions['NUM.'])

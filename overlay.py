@@ -1865,7 +1865,8 @@ class HUD:
         self.text(13, 190 if small else 229, footer, size=8, color=MUTED)
         if not small:
             self.text(13, 251, 'EQ  8/9 HIGH   5/6 MID   2/3 LOW   ·   ALT FOR FINE', size=9, color=MUTED)
-            self.text(13, 271, '0/. FILTER   - CENTER   + VOL ZERO/FULL   1/4 VOL   7 RESET EQ', size=9, color=MUTED)
+            self.text(13, 271, '0/. FILTER   - CENTER EQ/FILT   + VOL 0/100   1/4 VOL   7 EQ RESET',
+                      size=9, color=MUTED)
 
     def draw(self):
         if self.cfg.get('dj_mode'):

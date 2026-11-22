@@ -27,6 +27,9 @@ class DeckEstimates:
             self.sync_deck = self.deck
         elif action == 'eq_reset':
             self.set_eq(self.deck, 50)
+        elif action == 'deck_center':
+            self.set_eq(self.deck, 50)
+            self.values[self.deck, 'filter'] = 50
         elif action == 'eq_minimum':
             self.set_eq(self.deck, 0)
         elif action == 'bass_swap':

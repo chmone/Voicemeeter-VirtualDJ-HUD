@@ -227,6 +227,24 @@ class EstimateTests(unittest.TestCase):
         self.assertEqual(50, values.values[2, 'eq_high'])
         self.assertEqual(85, values.values[2, 'level'])
 
+    def test_center_deck_restores_eq_and_filter_and_leaves_fader_and_bypass_in_place(self):
+        values = DeckEstimates()
+        opts = DjOptions()
+        values.apply('low_down', opts)
+        values.apply('filter_down', opts)
+        before = dict(values.values)
+        values.apply('deck2', opts)
+        values.apply('eq_minimum', opts)
+        values.apply('filter_up', opts)
+        values.apply('volume_down', opts)
+        values.apply('filter_toggle', opts)
+        values.apply('deck_center', opts)
+        self.assertEqual((50, 50, 50, 50, 85), tuple(
+            values.values[2, control] for control in ('eq_high', 'eq_mid', 'eq_low', 'filter', 'level')))
+        self.assertEqual({1: False, 2: True}, values.filter_enabled)
+        self.assertEqual({key: value for key, value in before.items() if key[0] == 1},
+                         {key: value for key, value in values.values.items() if key[0] == 1})
+
     def test_bass_swap_alternates_the_lower_deck_without_reselecting(self):
         values = DeckEstimates()
         opts = DjOptions()

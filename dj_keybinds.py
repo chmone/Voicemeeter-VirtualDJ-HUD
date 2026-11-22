@@ -16,7 +16,7 @@ def keypad_rows(options):
         ('0   .', 'Filter left / right'),
         ('1   4', f'Volume −/+ {options.volume_step}%'),
         ('7', 'Reset deck EQ'),
-        ('−', 'Center filter'),
+        ('−', 'Center EQ and filter'),
         ('+', 'Volume zero / full'),
     ]
     if options.enter != 'none':

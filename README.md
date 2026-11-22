@@ -35,13 +35,13 @@ The installer detects the current VirtualDJ data directory, including the regist
 | `0` / `.` | Selected deck filter left / right |
 | `1` / `4` | Selected deck volume down / up by 15% by default |
 | `7` | Reset selected deck EQ |
-| `-` | Center selected deck filter |
+| `-` | Center selected deck EQ and filter |
 | `+` | Set selected deck volume to zero, or to full if it is already zero |
 | `Enter` (bare) | Toggle the selected deck’s filter by default, configurable |
 
 Use the keys bare or with Alt. The filter toggle uses bare Numpad Enter. Bare EQ steps cover 15% of the knob’s travel by default. Hold Alt for an 8% step. **VirtualDJ → Shortcuts and step sizes…** lets you change both EQ steps, filter and volume steps, and the Numpad Enter assignment. Main Enter remains available to VirtualDJ.
 
-Both deck filters start bypassed. Numpad `0` and `.` adjust the selected deck’s filter in either state. Bipolar steps land on 50% when they reach or cross neutral. Numpad Minus centers the position. The HUD shows the adjustable position in gray while bypassed. Numpad Enter applies the saved position when enabling the filter. In VirtualDJ’s Starter layout the visible Filter dial stays centered during bypass.
+Both deck filters start bypassed. Numpad `0` and `.` adjust the selected deck’s filter in either state. Bipolar steps land on 50% when they reach or cross neutral. Numpad Minus centers the selected deck’s EQ and filter and keeps its current volume and filter bypass state. The HUD shows the adjustable position in gray while bypassed. Numpad Enter applies the saved position when enabling the filter. In VirtualDJ’s Starter layout the visible Filter dial stays centered during bypass.
 
 | Selected-deck action | Shortcut |
 | --- | --- |

@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 
 MAPPER_NAME = 'KEYBOARD - Corner HUD DJ'
-MAPPER_REVISION = 11
+MAPPER_REVISION = 12
 DEFAULT_EQ_STEP = 8
 DEFAULT_EQ_COARSE_STEP = 15
 DEFAULT_VOLUME_STEP = 15
@@ -29,6 +29,7 @@ DJ_ACTIONS = {
     'low_down': 'Low EQ down', 'low_up': 'Low EQ up',
     'filter_down': 'Filter left', 'filter_up': 'Filter right',
     'filter_center': 'Center filter', 'filter_toggle': 'Toggle deck filter',
+    'deck_center': 'Center deck EQ and filter',
     'volume_down': 'Volume down', 'volume_up': 'Volume up',
     'volume_toggle': 'Toggle deck volume zero / full',
     'eq_minimum': 'Set deck EQ to minimum', 'eq_reset': 'Reset deck EQ',
@@ -49,7 +50,7 @@ NUMPAD_ACTIONS = {
     '/': 'deck1', '*': 'deck2', '8': 'high_down', '9': 'high_up',
     '5': 'mid_down', '6': 'mid_up', '2': 'low_down', '3': 'low_up',
     '0': 'filter_down', '.': 'filter_up', '1': 'volume_down', '4': 'volume_up',
-    '7': 'eq_reset', '-': 'filter_center', '+': 'volume_toggle',
+    '7': 'eq_reset', '-': 'deck_center', '+': 'volume_toggle',
 }
 TRANSPORT_KEYS = (
     ('Play / pause', 'play_button', '1'),
@@ -167,6 +168,8 @@ def deck_script(deck: int, action: str, options: DjOptions, *, coarse=False) -> 
              'volume': ('level', options.volume_step)}
     if action == 'eq_reset':
         return f'deck {deck} eq_reset'
+    if action == 'deck_center':
+        return f'deck {deck} eq_reset & ({filter_script(deck, "center")})'
     if action == 'eq_minimum':
         return ' & '.join(f'deck {deck} eq_{band}_freq 0%' for band in ('high', 'mid', 'low'))
     if action == 'volume_toggle':

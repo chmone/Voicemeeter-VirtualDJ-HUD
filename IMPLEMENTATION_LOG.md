@@ -76,3 +76,5 @@ Music Mode’s incremental EQ commands move 1.92 dB per press, 8% of the existin
 Mapper revision 11 assigns Alt+W to the selected deck’s frequency EQ minimum. It writes the three EQ controls only. The HUD starts both decks with neutral EQ estimates so the first adjustment appears immediately. On VirtualDJ build 9746, a live check moved all three knobs on the selected deck to minimum while the other deck’s EQ and both volume faders stayed in place.
 
 DJ EQ readouts use 100% at neutral. Mapper commands and bars still use the native knob position, from 0% to 100% of travel.
+
+Mapper revision 12 makes Numpad Minus center the selected deck’s three EQ bands and filter in one press. It reuses the filter-center action to preserve the current bypass state and keeps the deck’s volume fader in place.
