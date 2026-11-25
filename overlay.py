@@ -30,6 +30,7 @@ import pystray
 from dj_keybinds import DjKeybindGuide
 from dj_setup import BASS_SWAP_BINDING, EQ_MINIMUM_BINDING, RESET_BOTH_BINDING, DjOptions
 from dj_state import DeckEstimates
+from library_sync import LibrarySync
 from keyboard_controls import (
     NAVIGATION, VK_NUMLOCK, ShortcutPresses, foreground_is_virtualdj, identify_key, process_executable,
     send_dj_keypad,
@@ -72,6 +73,8 @@ DEFAULTS = {
     'dj_auto_focus': False,
     'dj_pause_macrobuttons': True,
     'dj_http_readback': False,
+    'vdj_library_sync': True,  # upload VirtualDJ's analysis to Music History when it changes
+    'music_history_dir': '',  # blank = find the music-history checkout automatically
     'macrobuttons_resume': None,
     'macrobuttons_pending_pid': None,
     'macrobuttons_saved_map': False,
@@ -662,6 +665,10 @@ class HUD:
         self.reader.start()
         self.hotkeys = WindowsFilterHotkeys(self.commands, self.hotkey_stop_event, self.cfg, self.keyboard_mode)
         self.hotkeys.start()
+        from dj_setup import vdj_home
+        self.library_sync = LibrarySync(self.cfg, self.stop_event, CONFIG_HOME / 'library_sync.json',
+                                        find_database=lambda: vdj_home() / 'database.xml')
+        self.library_sync.start()
         threading.Thread(target=self.run_tray, daemon=True, name='Tray').start()
         self.root.after(100, self.tick)
         # Re-send remembered settings after ELKA has had time to start.
@@ -1608,7 +1615,8 @@ class HUD:
         dj.add_command(label='Restore previous keyboard mapper…', command=lambda: self.install_dj_mapping(True))
         dj.add_separator()
         for label, key in (('Enter DJ Mode when VirtualDJ has focus', 'dj_auto_focus'),
-                           ('Pause MacroButtons in DJ Mode', 'dj_pause_macrobuttons')):
+                           ('Pause MacroButtons in DJ Mode', 'dj_pause_macrobuttons'),
+                           ('Sync track analysis to Music History', 'vdj_library_sync')):
             var = tk.BooleanVar(self.root, self.cfg[key])
 
             def save_option(setting=key, value=var):
@@ -1617,6 +1625,8 @@ class HUD:
                 save_config(self.cfg)
 
             dj.add_checkbutton(label=label, variable=var, command=save_option)
+        dj.add_command(label='Sync track analysis now', command=self.library_sync.request_now)
+        dj.add_command(label='Library sync: ' + self.library_sync.status, state='disabled')
         menu.add_cascade(label='VirtualDJ', menu=dj)
 
         appearance = tk.Menu(menu, tearoff=False)
@@ -1719,6 +1729,7 @@ class HUD:
             pystray.MenuItem('Show / Hide HUD', dispatch('toggle'), default=True),
             pystray.MenuItem('Settings…', dispatch('settings')),
             pystray.MenuItem('Switch Music / DJ Mode', dispatch('audio_mode')),
+            pystray.MenuItem('Sync VirtualDJ analysis to Music History', dispatch('vdj_library_sync')),
             pystray.MenuItem('Music filter', pystray.Menu(
                 pystray.MenuItem('Toggle bypass', dispatch('filter_toggle')),
                 pystray.MenuItem('Darker', dispatch('filter_down')),
@@ -2023,6 +2034,8 @@ class HUD:
                     count = len(self.monitors())
                     if count > 0:
                         self.select_monitor((int(self.cfg['monitor_index']) + 1) % count)
+                elif command == 'vdj_library_sync':
+                    self.library_sync.request_now()
                 elif command == 'anchor':
                     self.select_corner('bottom-right')
                 elif command == 'quit':
@@ -2057,6 +2070,7 @@ class HUD:
         except Exception:
             logging.exception('Could not restore MacroButtons at HUD shutdown')
         self.stop_event.set()
+        self.library_sync.wake.set()
         self.hotkey_stop_event.set()
         self.hotkeys.wake_and_exit()
         try:
