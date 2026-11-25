@@ -62,6 +62,16 @@ Keyboard control uses VirtualDJ's native mapper and works without Network Contro
 
 Existing licensed Network Control installations can opt into readback with `dj_http_readback` and the loopback `dj_http_base` in HUD settings. The [VirtualDJ Network Control documentation](https://www.virtualdj.com/wiki/NetworkControlPlugin.html) requires Pro for that extension.
 
+## Music History library sync
+
+The HUD keeps the [Music History](https://github.com/chmone/music-history) track library up to date with VirtualDJ's analysis. Every five minutes it checks VirtualDJ's `database.xml`. When the file has changed and VirtualDJ has finished saving, it runs that project's `virtualdj-sync` command in the background, with no window. The command uploads BPM, key, length, play count, cue points and automix mix-in/out points for every analysed track, without file paths. The next daily Music History run adds them to `TrackLibrary.json`, and tracks VirtualDJ knows but the library doesn't are looked up too.
+
+It finds the `music-history` checkout next to this folder, or in `Documents\GitHub`, `source\repos`, `Documents`, `Desktop` or your user folder. The checkout needs its `.venv` and a completed `auth-google`. Set `music_history_dir` in `settings.json` to use another location. If the project was updated without reinstalling its packages, the HUD installs `requirements.txt` once, quietly, and retries.
+
+The **VirtualDJ** menu shows the last result, has **Sync track analysis now**, and **Sync track analysis to Music History** turns it on or off. The tray menu has **Sync VirtualDJ analysis to Music History**. Results are logged to `hud.log`.
+
+VirtualDJ only analyses tracks it has scanned or loaded. Use **Batch → Analyze** on a folder or playlist to fill in more.
+
 ## Music Mode
 
 Turn Num Lock off to run Music macros with bare keypad keys. The HUD consumes assigned keypad presses so they don’t also act as navigation in a game or another app. Turn Num Lock on for ordinary keypad typing. Configure the map at **Music → Shortcuts…**. Saved iCUE chords such as Ctrl+Home and Ctrl+numpad remain available.
